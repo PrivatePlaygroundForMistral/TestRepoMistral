@@ -140,7 +140,7 @@
                 const Fright = numOr("forceRight", 0);
                 const Fleft = numOr("forceLeft", 0);
                 const dt = 0.4 * p.dx / p.c;           // CFL-stable sub-step
-                const damp = 100;                       // velocity damping (1/s) -> settles to F/A without ringing
+                const damp = 2500;                      // velocity damping (1/s): wave bounces a few times then settles to F/A
                 const steps = Math.max(1, Math.min(4000, Math.ceil(simDt / dt)));
                 const h = simDt / steps;
                 for (let s = 0; s < steps; s++) {
@@ -193,9 +193,10 @@
             step(dt) {
                 const slow = document.getElementById("slowMo").checked;
                 // Real wave c~5000 m/s crosses a 2 m bar in ~0.0004 s. Scale physical time so
-                // one traversal takes ~10 s of real time in slow-mo (visible propagation), or
-                // jump near-instantly to equilibrium when slow-mo is off.
-                const timeScale = slow ? 4.2e-5 : 0.02;
+                // one traversal takes ~5 s of real time in slow-mo (visible propagation, a few
+                // bounces, then settles to F/A within ~40 s), or jump near-instantly to
+                // equilibrium when slow-mo is off.
+                const timeScale = slow ? 8e-5 : 0.02;
                 this._advance(dt * timeScale);
             }
 
