@@ -10,7 +10,6 @@
 <body class="example">
     <div class="back"><a href="../index.html">&larr; back to examples</a></div>
     <h1>Cantilever Bar &mdash; FEM Beam (Semi-Implicit Euler)</h1>
-    <p style="color:#555;margin:0.25rem 0 1rem">A rubber cantilever (soft, so the bend is visible); raise Young's modulus toward steel for a stiffer rod.</p>
 
     <div class="sim">
         <div class="canvas-wrap">
@@ -19,54 +18,67 @@
 
         <div class="controls">
             <h3>Controls</h3>
+            <div class="btn-row">
+                <button id="start">Start</button>
+                <button id="pause" disabled>Pause</button>
+                <button id="reset">Reset</button>
+                <button id="colors" class="toggle-on">Colors: on</button>
+            </div>
             <table>
                 <tr><td>Current time</td><td><input id="currentTime" value="0.00 s" disabled></td></tr>
                 <tr><td>Time per sim. step</td><td><input id="stepTime" value="0.00 ms" disabled></td></tr>
                 <tr><td>Max |&sigma;|</td><td><input id="maxStress" value="0.00 MPa" disabled></td></tr>
-                <tr><td>Time step size (s)</td><td><input id="timeStep" type="number" step="0.001" min="0.001" max="0.05" value="0.005"></td></tr>
                 <tr><td>Gravity g (m/s&sup2;)</td><td><input id="gravity" type="number" step="0.1" value="9.81"></td></tr>
                 <tr><td>Young's modulus E (GPa)</td><td><input id="youngs" type="number" step="0.001" value="0.02"></td></tr>
                 <tr><td>Density &rho; (kg/m&sup3;)</td><td><input id="density" type="number" step="100" value="1100"></td></tr>
                 <tr><td>Bar length L (m)</td><td><input id="length" type="number" step="0.1" value="1.0"></td></tr>
                 <tr><td>Cross-section b&times;h (m&sup2;)</td><td><input id="area" type="number" step="0.001" value="0.01"></td></tr>
                 <tr><td>Section height h (m)</td><td><input id="height" type="number" step="0.01" value="0.05"></td></tr>
-                <tr><td># elements N</td><td><input id="elements" type="number" step="2" min="4" max="400" value="40"></td></tr>
+                <tr><td># elements N</td><td><input id="elements" type="number" step="2" min="4" max="200" value="40"></td></tr>
                 <tr><td>Damping (1/s)</td><td><input id="damping" type="number" step="0.1" value="1.0"></td></tr>
+                <tr><td>Slow motion</td><td><input id="slowMo" type="checkbox"></td></tr>
+                <tr><td>Time scale (slow-mo)</td><td><input id="timeScale" type="number" step="1e-4" value="0.05"></td></tr>
                 <tr><td>Plane normal angle (deg)</td><td><input id="normalAngle" type="number" step="1" value="0"></td></tr>
             </table>
-            <button id="reset">Reset</button>
-            <button id="pause">Pause</button>
-            <p style="font-size:0.85em;color:#666;margin-top:0.5rem">The left end is clamped. Gravity pulls the free
-               right end down; it swings and bounces back, decaying through the beam's bending modes. Hover the bar to
-               sample the stress tensor and traction t = &sigma;&middot;n.</p>
+            <p style="font-size:0.85em;color:#666;margin-top:0.5rem">Configure, then <strong>Start</strong>. The left end is
+               clamped; gravity bends the free right end down and it swings/bounces back. Hover the bar to sample the
+               stress tensor and traction t = &sigma;&middot;n. Mouse wheel rotates the plane normal.</p>
         </div>
     </div>
 
     <div class="description">
         <p>A horizontal rod is <strong>clamped at the left end</strong> (fixed position and slope) and otherwise free.
-           It is <strong>discretized</strong> into N elements along its length and integrated with a
-           <strong>finite element</strong> force model plus <strong>semi-implicit (symplectic) Euler</strong>. The default
-           material is a soft <strong>rubber</strong> (low Young's modulus) so the bend and swing are clearly visible; raise
-           <code>E</code> toward ~100&ndash;200 GPa for a stiff metal rod (the motion then becomes small and fast).</p>
+           It is <strong>discretized</strong> into N finite elements along its length and integrated with
+           <strong>semi-implicit (symplectic) Euler</strong>:</p>
         <pre><code>v(t + dt) = v(t) + dt * a(t)        // update velocity with the current acceleration
 x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre>
-        <p>Semi-implicit Euler uses the updated velocity for the position update, so it is symplectic and far better at
-           conserving energy in oscillatory systems than plain explicit Euler &mdash; the swing and bounce of the bar
-           stays bounded and only decays through the explicit damping term.</p>
+        <p>Using the updated velocity for the position update makes the integrator symplectic, so the oscillation stays
+           bounded and decays only through the explicit damping term &mdash; far better for a swinging system than plain
+           explicit Euler. Each step is sub-stepped to respect the CFL stability limit of the stiffest mode.</p>
 
-        <p>Each element resists axial stretch/compression through the Young's-modulus (membrane) energy
-           <code>&frac12; E A &epsilon;&sup2;</code> and bending through a discrete Kirchhoff bending energy
-           <code>&frac12; E I &kappa;&sup2;</code> built from the second difference of the node positions, which
-           penalizes curvature. Gravity is applied as a constant downward body force on every node. Because the left
-           end is clamped, the torque from gravity bends the bar downward on the right; the elastic restoring forces
-           swing it back, producing the damped oscillation you see.</p>
+        <p>Internal forces come from a small <strong>finite element</strong> model: an axial (membrane) spring
+           <code>kA = E&middot;A/dx</code> and a discrete Kirchhoff <strong>bending</strong> stiffness
+           <code>kB = E&middot;I/dx&sup3;</code> that penalizes curvature. Gravity is a constant downward body force on
+           every node, so the free right end swings down and bounces back through the beam's bending modes. The default
+           material is a soft <strong>rubber</strong> (low Young's modulus) so the bend and swing are clearly visible in
+           real time; raise <code>E</code> toward ~100&ndash;200 GPa for a stiff metal rod (the motion then becomes small
+           and very fast &mdash; enable <strong>Slow motion</strong> and lower the <strong>Time scale</strong> to see it).</p>
 
-        <p>The bar is colored by the local axial stress <code>&sigma;_xx</code> (red for tension, blue for
-           compression, white for zero). The 2D stress tensor at a sampled point combines the axial/bending stress on
-           the <code>xx</code> component with the transverse shear <code>&sigma;_xy</code> from the discrete bending
-           force; hovering shows the <strong>traction</strong> <code>t = &sigma;&middot;n</code> (green) decomposed
-           into its normal <code>t<sub>n</sub></code> (blue) and shear <code>t<sub>s</sub></code> (orange) components
-           on the plane whose normal <code>n</code> you configure.</p>
+        <p><strong>Stability note.</strong> A stiff rod has a very high bending frequency, so a naive fixed-step
+           integrator blows up (the bar &ldquo;despawns&rdquo; to NaN) the instant the per-step time exceeds the CFL limit.
+           This example avoids that two ways: (1) the physical time advanced per rendered frame is
+           <code>dt &middot; timeScale</code> (slow-mo scales it down further), so the step stays well inside the CFL
+           window; and (2) the per-frame sub-step count is capped, and any non-finite state is reset to rest, so the bar
+           can never vanish. Configure everything, then press <strong>Start</strong> to launch the swing.</p>
+
+        <p>The bar is colored by the local axial/bending stress <code>&sigma;_xx</code>
+           (<span style="color:#c0392b">red</span> for tension, <span style="color:#2980b9">blue</span> for compression,
+           white for zero; toggle <strong>Colors</strong>). The 2D stress tensor <code>&sigma;</code> combines
+           <code>&sigma;_xx</code> with a transverse shear <code>&sigma;_xy</code>. Hovering samples the tensor and shows
+           the <strong>traction</strong> <code>t = &sigma;&middot;n</code> (green) decomposed into its
+           <strong>normal</strong> <code>t<sub>n</sub></code> (blue) and <strong>shear</strong>
+           <code>t<sub>s</sub></code> (orange) components on the plane whose normal <code>n</code> you configure (mouse
+           wheel rotates it).</p>
     </div>
 
     <script>
@@ -96,28 +108,43 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 this.N = 40;
                 this.x = null;       // node positions (world meters), array of {x,y}
                 this.v = null;       // node velocities, array of {x,y}
-                this.x0 = null;      // rest positions (straight, along +x)
                 this.sigma = null;   // per-element axial stress sigma_xx (Pa)
                 this.tau = null;     // per-node shear stress sigma_xy (Pa)
                 this.maxAbsSigma = 0;
                 this.mouse = null;
-                this.hoverWorld = null;
+                this.hoverWorld = null;   // last sampled point over the bar (kept on leave)
+                this.showColor = true;   // stress-color toggle (independent of slow-mo)
                 this.init();
                 this.render(this.ctx);
                 canvas.addEventListener("mousemove", (e) => this._onMove(e));
+                canvas.addEventListener("wheel", (e) => this._onWheel(e), { passive: false });
+                // Note: do NOT clear hoverWorld on mouseleave -> keep last position.
+            }
+
+            // Mouse wheel rotates the cutting-plane normal (in degrees), keeping it in [0,360).
+            _onWheel(e) {
+                e.preventDefault();
+                const el = document.getElementById("normalAngle");
+                if (!el) return;
+                const step = 5 * Math.sign(e.deltaY);   // 5 deg per notch, invert so up = +
+                let v = (parseFloat(el.value) || 0) - step;
+                v = ((v % 360) + 360) % 360;
+                el.value = v.toFixed(0);
+                this.render(this.ctx);
             }
 
             init() {
                 const L = Math.max(1e-6, numOr("length", 1.0));
-                const N = Math.max(4, Math.min(400, Math.round(numOr("elements", 40))));
+                const N = Math.max(4, Math.min(200, Math.round(numOr("elements", 40))));
                 this.N = N;
                 this.length0 = L;
                 this.dx = L / (N - 1);
-                this.x0 = new Array(N);
-                for (let i = 0; i < N; i++) this.x0[i] = { x: i * this.dx, y: 0 };
-                this.x = this.x0.map(p => ({ x: p.x, y: p.y }));
+                this.x = new Array(N);
                 this.v = new Array(N);
-                for (let i = 0; i < N; i++) this.v[i] = { x: 0, y: 0 };
+                for (let i = 0; i < N; i++) {
+                    this.x[i] = { x: i * this.dx, y: 0 };
+                    this.v[i] = { x: 0, y: 0 };
+                }
                 this.sigma = new Array(N - 1).fill(0);
                 this.tau = new Array(N).fill(0);
                 this.maxAbsSigma = 0;
@@ -127,7 +154,7 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 const margin = 70;
                 const availW = this.width - 2 * margin;
                 const availH = this.height - 2 * margin;
-                // 1 m horizontal -> availW/L px; allow the tip to swing down ~0.7 m and stay on canvas.
+                // 1 m horizontal -> availW/L px; allow the tip to swing down ~0.75 m and stay on canvas.
                 const sx = availW / L;
                 const sy = availH / (L * 0.75);
                 this.scale = Math.min(sx, sy);
@@ -136,15 +163,15 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
 
             // ---- material / derived parameters ----
             _params() {
-                const E = Math.max(1e6, numOr("youngs", 100)) * 1e9;  // Pa
-                const rho = Math.max(1, numOr("density", 7850));
+                const E = Math.max(1e-9, numOr("youngs", 0.02)) * 1e9;  // Pa (positive floor)
+                const rho = Math.max(1, numOr("density", 1100));
                 const A = Math.max(1e-9, numOr("area", 0.01));
                 const h = Math.max(1e-6, numOr("height", 0.05));
                 const I = Math.max(1e-18, A * h * h / 12);   // rectangular section second moment
                 const L = Math.max(1e-6, this.length0);
                 const dx = this.dx;
-                const m = rho * A * dx;          // node lumped mass
-                const kA = E * A / dx;           // axial spring stiffness between adjacent nodes
+                const m = rho * A * dx;            // node lumped mass
+                const kA = E * A / dx;             // axial spring stiffness between adjacent nodes
                 const kB = E * I / (dx * dx * dx); // bending stiffness (discrete Kirchhoff)
                 return { E, rho, A, h, I, L, dx, m, kA, kB };
             }
@@ -160,7 +187,6 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 for (let i = 0; i < N; i++) f[i] = { fx: 0, fy: 0 };
 
                 // Axial (membrane) force: spring between adjacent nodes toward rest length dx.
-                // F on node i from link (i,i+1): kA * (|d| - dx) * d/|d|
                 for (let i = 0; i < N - 1; i++) {
                     let ddx = x[i + 1].x - x[i].x;
                     let ddy = x[i + 1].y - x[i].y;
@@ -172,21 +198,18 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                     f[i + 1].fx -= fx; f[i + 1].fy -= fy;
                 }
 
-                // Bending (Kirchhoff) force: penalize curvature via second difference of positions.
-                // Bending energy Ub = (1/2) kB * |x[i-1] - 2 x[i] + x[i+1]|^2.
-                // Force on node i = -dUb/dx[i] = -kB * (x[i-1] - 2 x[i] + x[i+1]) * (-2) ... => kB*2*(...) with sign.
-                // Using F_i = -dUb/dx_i gives: F_{i-1} -= kB * w; F_i += 2 kB * w; F_{i+1} -= kB * w, w = x[i-1]-2x[i]+x[i+1].
+                // Bending (Kirchhoff) force: penalize curvature via the second difference of positions.
+                // F_{i-1} -= kB*w; F_i += 2 kB*w; F_{i+1} -= kB*w, w = x[i-1]-2x[i]+x[i+1].
                 for (let i = 1; i < N - 1; i++) {
                     let wx = x[i - 1].x - 2 * x[i].x + x[i + 1].x;
                     let wy = x[i - 1].y - 2 * x[i].y + x[i + 1].y;
-                    let k = p.kB;
-                    f[i - 1].fx -= k * wx; f[i - 1].fy -= k * wy;
-                    f[i].fx     += 2 * k * wx; f[i].fy += 2 * k * wy;
-                    f[i + 1].fx -= k * wx; f[i + 1].fy -= k * wy;
+                    f[i - 1].fx -= p.kB * wx; f[i - 1].fy -= p.kB * wy;
+                    f[i].fx     += 2 * p.kB * wx; f[i].fy += 2 * p.kB * wy;
+                    f[i + 1].fx -= p.kB * wx; f[i + 1].fy -= p.kB * wy;
                 }
 
                 // Gravity (body force) and velocity damping.
-                const damp = Math.max(0, numOr("damping", 2.0));
+                const damp = Math.max(0, numOr("damping", 1.0));
                 for (let i = 0; i < N; i++) {
                     f[i].fy += p.m * g;                 // gravity pulls down (+y)
                     f[i].fx -= damp * p.m * this.v[i].x;
@@ -199,23 +222,31 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
             _advance(simDt) {
                 const p = this._params();
                 const N = this.N;
-                // Estimate a CFL-safe sub-step from the stiffest mode:
-                //   axial chain -> 4 kA / m ; discrete bending (4th-difference) -> 16 kB / m.
+                // CFL-safe sub-step from the stiffest mode:
+                //   axial chain -> 4 kA / m ; discrete bending -> 16 kB / m.
                 // Semi-implicit Euler is stable for dt*omega < 2; use 0.2/omega for accuracy.
                 const omega = Math.sqrt(Math.max(16 * p.kB, 4 * p.kA) / Math.max(p.m, 1e-12));
-                const dtSub = Math.min(simDt, 0.2 / Math.max(omega, 1));
-                const steps = Math.max(1, Math.min(20000, Math.ceil(simDt / dtSub)));
-                const h = simDt / steps;
+                const dtSub = 0.2 / Math.max(omega, 1);
+
+                // Cap the sub-step count so a very stiff rod cannot freeze the browser. Unlike a
+                // cap on `steps` that lets the integration step h grow past dtSub and destabilize
+                // the sim (NaN -> bar vanishes), we cap by advancing only `steps*dtSub` of physical
+                // time when the requested time would need too many sub-steps; h therefore never
+                // exceeds the CFL limit.
+                const MAX_STEPS = 2000;
+                let steps = Math.max(1, Math.ceil(simDt / dtSub));
+                let advanced = simDt;
+                if (steps > MAX_STEPS) { steps = MAX_STEPS; advanced = steps * dtSub; }
+                const h = advanced / steps;
+
                 for (let s = 0; s < steps; s++) {
                     const f = this._forces();
-                    // Semi-implicit Euler: velocity first (using current acceleration), then position with NEW velocity.
+                    // Semi-implicit Euler: velocity first (current acceleration), then position with NEW velocity.
                     for (let i = 0; i < N; i++) {
-                        if (i === 0) continue;            // clamp: node 0 fixed (position + velocity)
+                        if (i === 0) continue;            // clamp: node 0 fixed
                         this.v[i].x += (f[i].fx / p.m) * h;
                         this.v[i].y += (f[i].fy / p.m) * h;
                     }
-                    // Enforce clamped slope at the left end by mirroring node 1 onto the tangent at node 0.
-                    // After the position update, project node 1 back onto the +x axis (zero slope).
                     for (let i = 0; i < N; i++) {
                         if (i === 0) { this.x[i].x = 0; this.x[i].y = 0; this.v[i].x = 0; this.v[i].y = 0; continue; }
                         this.x[i].x += this.v[i].x * h;
@@ -226,10 +257,18 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                         this.x[1].y = 0; this.v[1].y = 0;
                     }
                 }
+                // Guard against any non-finite state (extreme parameter combos) so the bar never vanishes.
+                for (let i = 0; i < N; i++) {
+                    if (!isFinite(this.x[i].x) || !isFinite(this.x[i].y) ||
+                        !isFinite(this.v[i].x) || !isFinite(this.v[i].y)) {
+                        this.x[i].x = i * p.dx; this.x[i].y = 0; this.v[i].x = 0; this.v[i].y = 0;
+                    }
+                }
                 this._computeStress();
+                return advanced;   // physical time actually advanced (may be < simDt when clamped)
             }
 
-            // Per-element axial stress sigma_xx = E * (|d| - dx)/dx  (Pa), and a per-node
+            // Per-element axial stress sigma_xx = E*(eps + kappa*h/2)  (Pa), and a per-node
             // transverse shear proxy from the bending force magnitude.
             _computeStress() {
                 const p = this._params();
@@ -240,8 +279,6 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                     let ddy = this.x[i + 1].y - this.x[i].y;
                     let len = Math.sqrt(ddx * ddx + ddy * ddy);
                     const eps = (len - p.dx) / p.dx;
-                    // Bending contributes a top/bottom-fiber stress E * kappa * (h/2); add the
-                    // magnitude from the discrete curvature to give a visible bending color.
                     let kappa = 0;
                     if (i > 0 && i < N - 2) {
                         const wx = this.x[i].x - 2 * this.x[i + 1].x + this.x[i + 2].x;
@@ -253,7 +290,6 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                     if (Math.abs(sxx) > mx) mx = Math.abs(sxx);
                 }
                 this.maxAbsSigma = mx;
-                // Shear stress proxy: per-node bending force / A (Pa), as a transverse shear estimate.
                 const f = this._forces();
                 for (let i = 0; i < N; i++) {
                     this.tau[i] = (f[i].fy) / Math.max(p.A, 1e-9);
@@ -279,9 +315,29 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 return this.tau[i];
             }
 
+            // Deformed pixel position of a beam-local material coordinate (origin at node 0, +x).
+            _deformedPxX(wx) {
+                const s = this.scale, o = this.originPx, p = this._params();
+                const idx = wx / p.dx;          // 0..N-1
+                const i = Math.max(0, Math.min(this.N - 1, Math.floor(idx)));
+                const frac = Math.max(0, Math.min(1, idx - i));
+                const px = (i < this.N - 1)
+                    ? this.x[i].x * (1 - frac) + this.x[i + 1].x * frac
+                    : this.x[this.N - 1].x;
+                const py = (i < this.N - 1)
+                    ? this.x[i].y * (1 - frac) + this.x[i + 1].y * frac
+                    : this.x[this.N - 1].y;
+                return { x: o.x + px * s, y: o.y + py * s };
+            }
+
             step(dt) {
-                this.dt = numOr("timeStep", 0.005);
-                this._advance(this.dt);
+                // Physical time advanced per rendered frame. Slow-mo scales it down further so a
+                // stiff, fast rod can be watched without exceeding the CFL limit.
+                const ts = Math.max(0, numOr("timeScale", 0.05));
+                const slow = document.getElementById("slowMo").checked;
+                const timeScale = slow ? ts : 1.0;
+                const advanced = this._advance(dt * timeScale);
+                this.time += advanced;   // count only the physical time actually integrated
             }
 
             _onMove(e) {
@@ -294,14 +350,30 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 if (!this.running) this.render(this.ctx);
             }
 
+            // Map the mouse pixel x to the deformed bar's material coordinate (binary search;
+            // deformed x is monotonic in the material index for reasonable strains).
+            _pxToMaterialX(pxX) {
+                const p = this._params();
+                const lo = 0, hi = p.L;
+                let a = lo, b = hi;
+                for (let k = 0; k < 40; k++) {
+                    const mid = (a + b) / 2;
+                    const midPx = this._deformedPxX(mid).x;
+                    if (midPx < pxX) a = mid; else b = mid;
+                }
+                return (a + b) / 2;
+            }
+
             _readHover() {
                 if (!this.mouse) return;
-                // Convert pixel -> beam-local coordinates (origin at node 0, +x along the beam).
-                const wx = (this.mouse.px - this.originPx.x) / this.scale;
-                const wy = (this.mouse.py - this.originPx.y) / this.scale;
+                // Hit-test against the deformed bar: map the mouse pixel x to a material coordinate.
+                const wx = this._pxToMaterialX(this.mouse.px);
+                const anchor = this._deformedPxX(wx);
+                const wy = (this.mouse.py - anchor.y) / this.scale;
                 if (wx >= 0 && wx <= this.length0 && Math.abs(wy) <= this.length0 * 0.15) {
                     this.hoverWorld = { wx, wy };
                 }
+                // else: keep previous hoverWorld (do not reset)
             }
 
             // ---- rendering ----
@@ -325,12 +397,9 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
             }
 
             _drawWall(ctx) {
-                const s = this.scale;
                 const o = this.originPx;
-                const p = this._params();
                 const yTop = o.y - 30;
                 const yBot = o.y + 30;
-                // Hatched wall just to the left of node 0.
                 ctx.save();
                 ctx.fillStyle = "#d8d8df";
                 ctx.fillRect(o.x - 16, yTop, 14, yBot - yTop);
@@ -362,6 +431,7 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 // color autoscale: reference cantilever tip stress ~ rho g L^2 / (2 h) under self weight.
                 const sigRef = (p.rho * numOr("gravity", 9.81) * p.L * p.L) / (2 * Math.max(p.h, 1e-6));
                 const scale = Math.max(sigRef, this.maxAbsSigma, 1);
+                const fillCol = this.showColor ? null : "#cfd6e4";
 
                 // reference (undeformed) outline, dashed.
                 ctx.save();
@@ -381,12 +451,11 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                     const ax = o.x + x[i].x * s;
                     const ay = o.y + x[i].y * s;
                     const bx = o.x + x[i + 1].x * s;
-                    const by = o.y + x[i + 1].y * s;
+                    const by = o.y + x[i +1].y * s;
                     const dx = bx - ax, dy = by - ay;
                     const len = Math.hypot(dx, dy) || 1;
                     const nx = -dy / len, ny = dx / len;
-                    const t = this.sigma[i] / scale;
-                    ctx.fillStyle = stressColor(t);
+                    ctx.fillStyle = fillCol !== null ? fillCol : stressColor(this.sigma[i] / scale);
                     ctx.beginPath();
                     ctx.moveTo(ax + nx * yHalfPx, ay + ny * yHalfPx);
                     ctx.lineTo(bx + nx * yHalfPx, by + ny * yHalfPx);
@@ -438,12 +507,11 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 ctx.restore();
             }
 
-            // Draw the cutting plane through the sampled hover point.
+            // Draw the cutting plane through the sampled hover point, anchored to the deformed bar.
             _drawPlane(ctx, n) {
                 const s = this.scale;
-                const o = this.originPx;
                 const anchor = this.hoverWorld || { wx: this.length0 * 0.5, wy: 0 };
-                const pxC = { x: o.x + anchor.wx * s, y: o.y + anchor.wy * s };
+                const pxC = this._deformedPxX(anchor.wx);
                 const d = [-n[1], n[0]];
                 const big = Math.max(this.width, this.height);
 
@@ -496,10 +564,8 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
             }
 
             _drawHover(ctx, S, n) {
-                const s = this.scale;
-                const o = this.originPx;
-                const px = o.x + this.hoverWorld.wx * s;
-                const py = o.y + this.hoverWorld.wy * s;
+                const anchor = this._deformedPxX(this.hoverWorld.wx);
+                const px = anchor.x, py = anchor.y;
                 const t = Mat2.mulVec(S, n);
                 const vlen = 90 / 1e6;   // 90 px per MPa
 
@@ -585,26 +651,46 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
         const canvas = document.getElementById("canvas");
         const sim = new CantileverBeam(canvas);
 
+        const startBtn = document.getElementById("start");
         const pauseBtn = document.getElementById("pause");
+        function setRunningUI(running) {
+            startBtn.disabled = running;
+            pauseBtn.disabled = !running;
+            pauseBtn.textContent = "Pause";
+        }
+        startBtn.addEventListener("click", () => {
+            if (sim.running) return;
+            sim.start();
+            setRunningUI(true);
+        });
         pauseBtn.addEventListener("click", () => {
-            if (sim.running) { sim.stop(); pauseBtn.textContent = "Resume"; }
+            if (sim.running) { sim.stop(); pauseBtn.textContent = "Resume"; startBtn.disabled = true; }
             else { sim.start(); pauseBtn.textContent = "Pause"; }
         });
-        document.getElementById("reset").addEventListener("click", () => sim.reset());
+        document.getElementById("reset").addEventListener("click", () => {
+            sim.stop();
+            sim.reset();
+            setRunningUI(false);
+        });
+        const colorsBtn = document.getElementById("colors");
+        colorsBtn.addEventListener("click", () => {
+            sim.showColor = !sim.showColor;
+            colorsBtn.textContent = "Colors: " + (sim.showColor ? "on" : "off");
+            colorsBtn.classList.toggle("toggle-on", sim.showColor);
+            if (!sim.running) sim.render(sim.ctx);
+        });
 
-        // Geometry/material/gravity changes rebuild the model and restart from rest.
-        const rebuildControls = "#gravity,#youngs,#density,#length,#area,#height,#elements,#damping,#timeStep";
-        document.querySelectorAll(rebuildControls)
+        // All config changes rebuild the model from rest and re-render (no live simulation).
+        const allControls = "#gravity,#youngs,#density,#length,#area,#height,#elements,#damping,#slowMo,#timeScale,#normalAngle";
+        document.querySelectorAll(allControls)
             .forEach(el => el.addEventListener("input", () => {
                 sim.init();
                 sim.render(sim.ctx);
             }));
-        document.getElementById("normalAngle")
-            .addEventListener("input", () => sim.render(sim.ctx));
 
-        // Start immediately: gravity bends the bar down and it swings/bounces back.
-        sim.start();
-        pauseBtn.textContent = "Pause";
+        // Do NOT auto-start: user configures the bar and presses Start to launch the swing.
+        setRunningUI(false);
+        sim.render(sim.ctx);
     </script>
 </body>
 </html>

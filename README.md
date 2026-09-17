@@ -80,16 +80,21 @@ model: an axial (membrane) spring `kA = E·A/dx` and a discrete Kirchhoff
 constant downward body force on every node, so the free right end swings down
 and bounces back through the beam's bending modes. The default material is a
 soft rubber (low Young's modulus) so the bend and swing are clearly visible;
-raise `E` toward ~100–200 GPa for a stiff metal rod (small, fast motion).
+raise `E` toward ~100–200 GPa for a stiff metal rod (small, fast motion —
+enable Slow motion and lower Time scale to watch it). A stiff rod has a very
+high bending frequency, so each step is sub-stepped to respect the CFL limit;
+the per-frame sub-step count is capped and any non-finite state is reset to
+rest, so the bar can never blow up to NaN and vanish.
 
 The bar is colored by the local axial/bending stress `σ_xx`; the 2D stress
 tensor `σ` combines `σ_xx` with a transverse shear `σ_xy`. Hovering the bar
 samples the tensor and shows the traction `t = σ·n` decomposed into its normal
 `t_n` and shear `t_s` components on the plane whose normal `n` you configure.
 
-Controls: time step size, gravity, Young's modulus, density, bar length,
-cross-section area, section height, element count, damping, plane normal
-angle, plus Reset / Pause. Live stats show current time, time per sim. step,
+Controls: gravity, Young's modulus, density, bar length, cross-section
+area, section height, element count, damping, slow motion + time scale, plane
+normal angle, plus Start / Pause / Reset and a Colors toggle (mouse wheel
+rotates the plane normal). Live stats show current time, time per sim. step,
 and max |σ|.
 
 ## Adding a new example
