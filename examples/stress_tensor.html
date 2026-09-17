@@ -120,7 +120,20 @@
                 this.render(this.ctx);
 
                 canvas.addEventListener("mousemove", (e) => this._onMove(e));
+                canvas.addEventListener("wheel", (e) => this._onWheel(e), { passive: false });
                 // Note: do NOT clear hoverWorld on mouseleave -> keep last position.
+            }
+
+            // Mouse wheel rotates the cutting-plane normal (in degrees), keeping it in [0,360).
+            _onWheel(e) {
+                e.preventDefault();
+                const el = document.getElementById("normalAngle");
+                if (!el) return;
+                const step = 5 * Math.sign(e.deltaY);   // 5 deg per notch, invert so up = +
+                let v = (parseFloat(el.value) || 0) - step;
+                v = ((v % 360) + 360) % 360;
+                el.value = v.toFixed(0);
+                this.render(this.ctx);
             }
 
             init() {

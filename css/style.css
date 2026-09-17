@@ -75,13 +75,15 @@ canvas {
     border-radius: 4px;
     padding: 0.75rem 1rem;
     min-width: 260px;
-    max-width: 320px;
+    width: 300px;
     align-self: flex-start;
+    overflow: hidden;
 }
 
 .controls table {
     border-collapse: collapse;
     width: 100%;
+    table-layout: fixed;
 }
 
 .controls td {
@@ -92,6 +94,13 @@ canvas {
 .controls td:first-child {
     white-space: nowrap;
     color: #444;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.controls td:last-child {
+    width: 7.5rem;
+    padding-right: 0;
 }
 
 .controls input[type="number"],
