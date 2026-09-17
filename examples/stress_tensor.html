@@ -32,10 +32,13 @@
                 <tr><td>Bar cross-section A (m&sup2;)</td><td><input id="area" type="number" step="0.001" value="0.01"></td></tr>
                 <tr><td>Plane normal angle (deg)</td><td><input id="normalAngle" type="number" step="1" value="0"></td></tr>
                 <tr><td>Slow motion (wave)</td><td><input id="slowMo" type="checkbox" checked></td></tr>
+                <tr><td>Time scale (slow-mo)</td><td><input id="timeScale" type="number" step="1e-6" value="4e-5"></td></tr>
+                <tr><td>Damping (1/s)</td><td><input id="damping" type="number" step="100" value="3000"></td></tr>
             </table>
+            <button id="start">Start</button>
+            <button id="pause" disabled>Pause</button>
             <button id="reset">Reset</button>
-            <button id="pause">Pause</button>
-            <p style="font-size:0.85em;color:#666;margin-top:0.5rem">Apply a force and watch the stress (color) travel through the bar. Hover the bar to sample the stress tensor and traction t = P&middot;n.</p>
+            <p style="font-size:0.85em;color:#666;margin-top:0.5rem">Configure the bar and forces, then press <strong>Start</strong> to launch the stress wave. Hover the bar to sample the stress tensor and traction t = P&middot;n. Lower damping &rarr; crisper wave but more bounces; higher damping &rarr; settles to F/A faster but a weaker front.</p>
         </div>
     </div>
 
@@ -53,6 +56,17 @@
            &sigma; = F/A. You can apply forces on <em>both</em> ends at the same time (uncheck
            &ldquo;Hold left end fixed&rdquo; to pull the left end too); balanced outward forces
            settle to uniform tension, with waves entering from both ends.</p>
+
+        <p><strong>Why does it keep bouncing?</strong> The bar is an ideal 1D elastic rod
+           solving the lossless wave equation &rho;&uuml; = E u&prime;&prime;. A sudden force
+           launches a stress wave at c = &radic;(E/&rho;) that reflects at the ends. In a truly
+           lossless rod these reflections continue forever &mdash; that is correct mechanics, not a
+           bug. Real steel has internal (material) damping that bleeds energy over many
+           reflections until the bar rests at the static equilibrium &sigma; = F/A. The
+           <strong>Damping</strong> control models this: lower it for a crisp front that bounces
+           longer; raise it to settle to F/A faster (at the cost of a softer wave front). Tune
+           the <strong>Time scale</strong> to slow the animation down further. Configure
+           everything, then press <strong>Start</strong> to launch the wave.</p>
 
         <p>The first Piola-Kirchhoff stress tensor at a point is
            <code>P = diag(&sigma;, 0)</code> (uniaxial; lateral surfaces are stress-free).
@@ -140,7 +154,7 @@
                 const Fright = numOr("forceRight", 0);
                 const Fleft = numOr("forceLeft", 0);
                 const dt = 0.4 * p.dx / p.c;           // CFL-stable sub-step
-                const damp = 2500;                      // velocity damping (1/s): wave bounces a few times then settles to F/A
+                const damp = Math.max(0, numOr("damping", 3000)); // velocity damping (1/s): models material/internal damping
                 const steps = Math.max(1, Math.min(4000, Math.ceil(simDt / dt)));
                 const h = simDt / steps;
                 for (let s = 0; s < steps; s++) {
@@ -196,7 +210,8 @@
                 // one traversal takes ~5 s of real time in slow-mo (visible propagation, a few
                 // bounces, then settles to F/A within ~40 s), or jump near-instantly to
                 // equilibrium when slow-mo is off.
-                const timeScale = slow ? 8e-5 : 0.02;
+                const ts = Math.max(1e-9, numOr("timeScale", 4e-5));
+                const timeScale = slow ? ts : 0.02;
                 this._advance(dt * timeScale);
             }
 
@@ -469,12 +484,28 @@
         const canvas = document.getElementById("canvas");
         const sim = new StressBar(canvas);
 
+        const startBtn = document.getElementById("start");
         const pauseBtn = document.getElementById("pause");
+
+        function setRunningUI(running) {
+            startBtn.disabled = running;
+            pauseBtn.disabled = !running;
+            pauseBtn.textContent = "Pause";
+        }
+
+        startBtn.addEventListener("click", () => {
+            if (sim.running) return;
+            sim.start();
+            setRunningUI(true);
+        });
         pauseBtn.addEventListener("click", () => {
-            if (sim.running) { sim.stop(); pauseBtn.textContent = "Resume"; }
+            if (sim.running) { sim.stop(); pauseBtn.textContent = "Resume"; startBtn.disabled = true; }
             else { sim.start(); pauseBtn.textContent = "Pause"; }
         });
-        document.getElementById("reset").addEventListener("click", () => sim.reset());
+        document.getElementById("reset").addEventListener("click", () => {
+            sim.reset();
+            setRunningUI(false);
+        });
 
         // Force / boundary changes drive the wave behavior:
         //  - Slow-mo ON: reset the bar to rest (keep the new force live) so the step front
@@ -482,7 +513,7 @@
         //  - Slow-mo OFF: jump straight to the static equilibrium.
         // Material/geometry/plane changes only re-render or re-settle without a fresh wave.
         const waveControls = "#forceRight,#forceLeft,#fixLeft";
-        const settleControls = "#youngs,#poisson,#density,#length,#area,#normalAngle,#slowMo";
+        const settleControls = "#youngs,#poisson,#density,#length,#area,#normalAngle,#slowMo,#timeScale,#damping";
         document.querySelectorAll(waveControls)
             .forEach(el => el.addEventListener("input", () => {
                 if (document.getElementById("slowMo").checked) {
@@ -502,11 +533,9 @@
                 sim.render(sim.ctx);
             }));
 
-        // Start at static equilibrium. Toggle Slow motion on, then change a force to launch a wave.
-        sim._settle();
+        // Do NOT auto-start: user configures the bar and presses Start to launch the wave.
+        setRunningUI(false);
         sim.render(sim.ctx);
-        sim.start();
-        pauseBtn.textContent = "Pause";
     </script>
 </body>
 </html>
