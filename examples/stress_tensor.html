@@ -242,6 +242,22 @@
                 return this.sigma[i] * (1 - frac) + this.sigma[i + 1] * frac;
             }
 
+            // Deformed pixel x for a material coordinate wx (reference frame), including
+            // the exaggerated displacement used to draw the bar. Lets the hover/plane/
+            // traction visualization follow the deformed bar instead of the reference grid.
+            _deformedPxX(wx) {
+                const p = this._params();
+                const s = this.scale, c = this.centerPx;
+                const dispScale = 200;
+                const idx = (wx + p.L / 2) / p.dx;          // 0..N-1
+                const i = Math.max(0, Math.min(this.N - 1, Math.floor(idx)));
+                const frac = Math.max(0, Math.min(1, idx - i));
+                const u = (i < this.N - 1)
+                    ? this.u[i] * (1 - frac) + this.u[i + 1] * frac
+                    : this.u[this.N - 1];
+                return c.x - p.L / 2 * s + (i + frac) * p.dx * s + u * s * dispScale;
+            }
+
             step(dt) {
                 const slow = document.getElementById("slowMo").checked;
                 // Real wave c~5000 m/s crosses a 2 m bar in ~0.0004 s. Scale physical time so
@@ -263,10 +279,29 @@
                 if (!this.running) this.render(this.ctx);
             }
 
+            // Invert a deformed pixel x back to the material coordinate wx by scanning nodes
+            // (the deformed x is monotonic in the material index for reasonable strains).
+            _pxToMaterialX(pxX) {
+                const p = this._params();
+                const s = this.scale, c = this.centerPx;
+                const dispScale = 200;
+                const lo = -p.L / 2, hi = p.L / 2;
+                // Binary search on material coordinate for the matching deformed pixel x.
+                let a = lo, b = hi;
+                for (let k = 0; k < 40; k++) {
+                    const mid = (a + b) / 2;
+                    const midPx = this._deformedPxX(mid);
+                    if (midPx < pxX) a = mid; else b = mid;
+                }
+                return (a + b) / 2;
+            }
+
             _readHover() {
                 if (!this.mouse) return;
-                const wx = (this.mouse.px - this.centerPx.x) / this.scale;
                 const wy = (this.mouse.py - this.centerPx.y) / this.scale;
+                // Hit-test against the deformed bar: map the mouse pixel x to a material
+                // coordinate, then check it lies within the bar bounds (in material space).
+                const wx = this._pxToMaterialX(this.mouse.px);
                 if (Math.abs(wx) <= this.length0 / 2 && Math.abs(wy) <= this.height0 / 2) {
                     this.hoverWorld = { wx, wy };
                 }
@@ -381,7 +416,9 @@
                 const s = this.scale;
                 const c = this.centerPx;
                 const anchor = this.hoverWorld || { wx: 0, wy: 0 };
-                const pxC = { x: c.x + anchor.wx * s, y: c.y + anchor.wy * s };
+                // Anchor at the deformed bar position so the plane follows the bar, not the
+                // reference grid. y stays at the hover height (no vertical displacement).
+                const pxC = { x: this._deformedPxX(anchor.wx), y: c.y + anchor.wy * s };
                 const d = [-n[1], n[0]];
                 const big = Math.max(this.width, this.height);
 
@@ -436,8 +473,10 @@
             _drawHover(ctx, P, n) {
                 const s = this.scale;
                 const c = this.centerPx;
-                const px = c.x + this.hoverWorld.wx * s;
-                const py = c.y + this.hoverWorld.wy * s;
+                const anchor = this.hoverWorld || { wx: 0, wy: 0 };
+                // Anchor the traction vectors at the deformed bar position.
+                const px = this._deformedPxX(anchor.wx);
+                const py = c.y + anchor.wy * s;
                 const t = Mat2.mulVec(P, n);
                 const vlen = 90 / 1e6;   // 90 px per MPa
 
