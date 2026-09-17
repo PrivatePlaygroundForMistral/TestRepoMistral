@@ -547,6 +547,11 @@
                 }
                 sim.render(sim.ctx);
             }));
+        // Slow-mo is a playback-speed toggle only: it never changes the Colors state.
+        document.getElementById("slowMo").addEventListener("change", () => {
+            // re-render to reflect the new time scale; keep Colors as-is.
+            sim.render(sim.ctx);
+        });
 
         // Do NOT auto-start: user configures the bar and presses Start to launch the wave.
         setRunningUI(false);
