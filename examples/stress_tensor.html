@@ -41,7 +41,7 @@
                 <tr><td>Time scale (slow-mo)</td><td><input id="timeScale" type="number" step="1e-7" value="4e-7"></td></tr>
                 <tr><td>Damping (1/s)</td><td><input id="damping" type="number" step="100" value="3000"></td></tr>
             </table>
-            <p style="font-size:0.85em;color:#666;margin-top:0.5rem">Configure the bar and forces, then press <strong>Start</strong> to launch the stress wave. Hover the bar to sample the stress tensor and traction t = P&middot;n. Lower damping &rarr; crisper wave but more bounces; higher damping &rarr; settles to F/A faster but a weaker front.</p>
+            <p style="font-size:0.85em;color:#666;margin-top:0.5rem">Configure, then <strong>Start</strong>. Hover the bar to sample the traction. Lower damping &rarr; crisper wave, more bounces; higher &rarr; settles to F/A faster.</p>
         </div>
     </div>
 
@@ -162,7 +162,9 @@
                 const Fleft = numOr("forceLeft", 0);
                 const dt = 0.4 * p.dx / p.c;           // CFL-stable sub-step
                 const damp = Math.max(0, numOr("damping", 3000)); // velocity damping (1/s): models material/internal damping
-                const steps = Math.max(1, Math.min(4000, Math.ceil(simDt / dt)));
+                // Guarantee the integration step h never exceeds the CFL limit. The previous
+                // hard cap on `steps` could let h grow past dt and destabilize the sim (NaN).
+                const steps = Math.max(1, Math.ceil(simDt / dt));
                 const h = simDt / steps;
                 for (let s = 0; s < steps; s++) {
                     const a = new Array(N);
@@ -180,6 +182,11 @@
                         v[i] += a[i] * h;
                         u[i] += v[i] * h;
                     }
+                }
+                // Guard against any non-finite state (e.g. extreme parameter combos)
+                // so the renderer never gets NaN coordinates and the bar never vanishes.
+                for (let i = 0; i < N; i++) {
+                    if (!isFinite(u[i]) || !isFinite(v[i])) { u[i] = 0; v[i] = 0; }
                 }
                 this._computeStress();
             }
