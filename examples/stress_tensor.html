@@ -203,9 +203,20 @@
                 this.maxAbsSigma = mx;
             }
 
-            // Run enough sub-steps to settle to equilibrium (used when not in slow-mo).
+            // Compute the static equilibrium directly (no time integration, no freeze):
+            // for a fixed-left bar under axial force F on the right, u(x) = F*x/(E*A).
             _settle() {
-                this._advance(0.02);
+                const p = this._params();
+                const fixLeft = document.getElementById("fixLeft").checked;
+                const Fright = numOr("forceRight", 0);
+                const Fleft = numOr("forceLeft", 0);
+                for (let i = 0; i < this.N; i++) {
+                    const x = i * p.dx;
+                    if (i === 0 && fixLeft) { this.u[i] = 0; this.v[i] = 0; continue; }
+                    this.u[i] = (Fright * x - Fleft * (p.L - x)) / (p.E * p.A);
+                    this.v[i] = 0;
+                }
+                this._computeStress();
             }
 
             // Local axial stress at world x (linear interp over segments). Pa.
@@ -534,24 +545,10 @@
         //    propagates as a fresh wave from the loaded end(s) toward equilibrium.
         //  - Slow-mo OFF: jump straight to the static equilibrium.
         // Material/geometry/plane changes only re-render or re-settle without a fresh wave.
-        const waveControls = "#forceRight,#forceLeft,#fixLeft";
-        const settleControls = "#youngs,#poisson,#density,#length,#area,#normalAngle,#slowMo,#timeScale,#damping";
-        document.querySelectorAll(waveControls)
+        const allControls = "#forceRight,#forceLeft,#fixLeft,#youngs,#poisson,#density,#length,#area,#normalAngle,#slowMo,#timeScale,#damping";
+        document.querySelectorAll(allControls)
             .forEach(el => el.addEventListener("input", () => {
-                if (document.getElementById("slowMo").checked) {
-                    sim.init();          // rest state; force stays applied -> wave launches
-                } else {
-                    sim.init();
-                    sim._settle();
-                }
-                sim.render(sim.ctx);
-            }));
-        document.querySelectorAll(settleControls)
-            .forEach(el => el.addEventListener("input", () => {
-                if (!document.getElementById("slowMo").checked) {
-                    sim.init();
-                    sim._settle();
-                }
+                sim.init();          // reset to rest; forces/material are read live when Start is pressed
                 sim.render(sim.ctx);
             }));
         // Slow-mo is a playback-speed toggle only: it never changes the Colors state.
