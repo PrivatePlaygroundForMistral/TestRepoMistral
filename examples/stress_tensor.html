@@ -18,6 +18,12 @@
 
         <div class="controls">
             <h3>Controls</h3>
+            <div class="btn-row">
+                <button id="start">Start</button>
+                <button id="pause" disabled>Pause</button>
+                <button id="reset">Reset</button>
+                <button id="colors" class="toggle-on">Colors: on</button>
+            </div>
             <table>
                 <tr><td>Current time</td><td><input id="currentTime" value="0.00 s" disabled></td></tr>
                 <tr><td>Time per sim. step</td><td><input id="stepTime" value="0.00 ms" disabled></td></tr>
@@ -32,10 +38,10 @@
                 <tr><td>Bar cross-section A (m&sup2;)</td><td><input id="area" type="number" step="0.001" value="0.01"></td></tr>
                 <tr><td>Plane normal angle (deg)</td><td><input id="normalAngle" type="number" step="1" value="0"></td></tr>
                 <tr><td>Slow motion (wave)</td><td><input id="slowMo" type="checkbox" checked></td></tr>
+                <tr><td>Time scale (slow-mo)</td><td><input id="timeScale" type="number" step="1e-7" value="4e-7"></td></tr>
+                <tr><td>Damping (1/s)</td><td><input id="damping" type="number" step="100" value="3000"></td></tr>
             </table>
-            <button id="reset">Reset</button>
-            <button id="pause">Pause</button>
-            <p style="font-size:0.85em;color:#666;margin-top:0.5rem">Apply a force and watch the stress (color) travel through the bar. Hover the bar to sample the stress tensor and traction t = P&middot;n.</p>
+            <p style="font-size:0.85em;color:#666;margin-top:0.5rem">Configure, then <strong>Start</strong>. Hover the bar to sample the traction. Lower damping &rarr; crisper wave, more bounces; higher &rarr; settles to F/A faster.</p>
         </div>
     </div>
 
@@ -43,9 +49,12 @@
         <p>This example models the iron bar as a 1D elastic rod and solves the
            <strong>wave equation</strong> <code>&rho; &uuml; = E u&prime;&prime;</code> so that a
            suddenly applied force launches a <strong>stress wave</strong> that travels at the
-           longitudinal wave speed <code>c = &radic;(E/&rho;)</code>. The bar is colored by the
-           local axial stress &sigma; = E&middot;&epsilon;: <span style="color:#c0392b">red</span>
-           for tension, <span style="color:#2980b9">blue</span> for compression, white for zero.</p>
+           longitudinal wave speed <code>c = &radic;(E/&rho;)</code>. The bar can be colored by the
+           local axial stress &sigma; = E&middot;&epsilon; (toggle <strong>Colors</strong>):
+           <span style="color:#c0392b">red</span> for tension,
+           <span style="color:#2980b9">blue</span> for compression, white for zero. Coloring is
+           independent of <strong>Slow motion</strong> &mdash; you can watch a fast static deformation
+           colored, or an uncolored slow-motion wave.</p>
 
         <p>Apply a force on the right end (with the left end held fixed) and in
            <strong>Slow motion</strong> you can watch the red tension travel from the right end
@@ -53,6 +62,17 @@
            &sigma; = F/A. You can apply forces on <em>both</em> ends at the same time (uncheck
            &ldquo;Hold left end fixed&rdquo; to pull the left end too); balanced outward forces
            settle to uniform tension, with waves entering from both ends.</p>
+
+        <p><strong>Why does it keep bouncing?</strong> The bar is an ideal 1D elastic rod
+           solving the lossless wave equation &rho;&uuml; = E u&prime;&prime;. A sudden force
+           launches a stress wave at c = &radic;(E/&rho;) that reflects at the ends. In a truly
+           lossless rod these reflections continue forever &mdash; that is correct mechanics, not a
+           bug. Real steel has internal (material) damping that bleeds energy over many
+           reflections until the bar rests at the static equilibrium &sigma; = F/A. The
+           <strong>Damping</strong> control models this: lower it for a crisp front that bounces
+           longer; raise it to settle to F/A faster (at the cost of a softer wave front). Tune
+           the <strong>Time scale</strong> to slow the animation down further. Configure
+           everything, then press <strong>Start</strong> to launch the wave.</p>
 
         <p>The first Piola-Kirchhoff stress tensor at a point is
            <code>P = diag(&sigma;, 0)</code> (uniaxial; lateral surfaces are stress-free).
@@ -95,11 +115,25 @@
                 this.mouse = null;
                 this.hoverWorld = null;        // last sampled point over the bar (kept on leave)
                 this.maxAbsSigma = 0;          // for color autoscale
+                this.showColor = true;          // stress-color toggle (independent of slow-mo)
                 this.init();
                 this.render(this.ctx);
 
                 canvas.addEventListener("mousemove", (e) => this._onMove(e));
+                canvas.addEventListener("wheel", (e) => this._onWheel(e), { passive: false });
                 // Note: do NOT clear hoverWorld on mouseleave -> keep last position.
+            }
+
+            // Mouse wheel rotates the cutting-plane normal (in degrees), keeping it in [0,360).
+            _onWheel(e) {
+                e.preventDefault();
+                const el = document.getElementById("normalAngle");
+                if (!el) return;
+                const step = 5 * Math.sign(e.deltaY);   // 5 deg per notch, invert so up = +
+                let v = (parseFloat(el.value) || 0) - step;
+                v = ((v % 360) + 360) % 360;
+                el.value = v.toFixed(0);
+                this.render(this.ctx);
             }
 
             init() {
@@ -140,8 +174,10 @@
                 const Fright = numOr("forceRight", 0);
                 const Fleft = numOr("forceLeft", 0);
                 const dt = 0.4 * p.dx / p.c;           // CFL-stable sub-step
-                const damp = 100;                       // velocity damping (1/s) -> settles to F/A without ringing
-                const steps = Math.max(1, Math.min(4000, Math.ceil(simDt / dt)));
+                const damp = Math.max(0, numOr("damping", 3000)); // velocity damping (1/s): models material/internal damping
+                // Guarantee the integration step h never exceeds the CFL limit. The previous
+                // hard cap on `steps` could let h grow past dt and destabilize the sim (NaN).
+                const steps = Math.max(1, Math.ceil(simDt / dt));
                 const h = simDt / steps;
                 for (let s = 0; s < steps; s++) {
                     const a = new Array(N);
@@ -160,6 +196,11 @@
                         u[i] += v[i] * h;
                     }
                 }
+                // Guard against any non-finite state (e.g. extreme parameter combos)
+                // so the renderer never gets NaN coordinates and the bar never vanishes.
+                for (let i = 0; i < N; i++) {
+                    if (!isFinite(u[i]) || !isFinite(v[i])) { u[i] = 0; v[i] = 0; }
+                }
                 this._computeStress();
             }
 
@@ -175,9 +216,20 @@
                 this.maxAbsSigma = mx;
             }
 
-            // Run enough sub-steps to settle to equilibrium (used when not in slow-mo).
+            // Compute the static equilibrium directly (no time integration, no freeze):
+            // for a fixed-left bar under axial force F on the right, u(x) = F*x/(E*A).
             _settle() {
-                this._advance(0.02);
+                const p = this._params();
+                const fixLeft = document.getElementById("fixLeft").checked;
+                const Fright = numOr("forceRight", 0);
+                const Fleft = numOr("forceLeft", 0);
+                for (let i = 0; i < this.N; i++) {
+                    const x = i * p.dx;
+                    if (i === 0 && fixLeft) { this.u[i] = 0; this.v[i] = 0; continue; }
+                    this.u[i] = (Fright * x - Fleft * (p.L - x)) / (p.E * p.A);
+                    this.v[i] = 0;
+                }
+                this._computeStress();
             }
 
             // Local axial stress at world x (linear interp over segments). Pa.
@@ -193,9 +245,11 @@
             step(dt) {
                 const slow = document.getElementById("slowMo").checked;
                 // Real wave c~5000 m/s crosses a 2 m bar in ~0.0004 s. Scale physical time so
-                // one traversal takes ~10 s of real time in slow-mo (visible propagation), or
-                // jump near-instantly to equilibrium when slow-mo is off.
-                const timeScale = slow ? 4.2e-5 : 0.02;
+                // one traversal takes ~5 s of real time in slow-mo (visible propagation, a few
+                // bounces, then settles to F/A within ~40 s), or jump near-instantly to
+                // equilibrium when slow-mo is off.
+                const ts = Math.max(1e-9, numOr("timeScale", 4e-5));
+                const timeScale = slow ? ts : 0.02;
                 this._advance(dt * timeScale);
             }
 
@@ -260,10 +314,10 @@
                 const sigRef = Math.max(Math.abs(numOr("forceRight", 0)), Math.abs(numOr("forceLeft", 0))) / p.A;
                 const scale = Math.max(sigRef, this.maxAbsSigma, 1);
 
+                const fillCol = this.showColor ? null : "#cfd6e4";
                 for (let i = 0; i < N - 1; i++) {
                     const xL = c.x - p.L / 2 * s + (i * p.dx) * s + this.u[i] * s * dispScale;
-                    const t = this.sigma[i] / scale;
-                    ctx.fillStyle = stressColor(t);
+                    ctx.fillStyle = fillCol !== null ? fillCol : stressColor(this.sigma[i] / scale);
                     ctx.fillRect(xL, yTop, segW + 1, this.height0 * s);
                 }
 
@@ -468,44 +522,57 @@
         const canvas = document.getElementById("canvas");
         const sim = new StressBar(canvas);
 
+        const startBtn = document.getElementById("start");
         const pauseBtn = document.getElementById("pause");
+
+        function setRunningUI(running) {
+            startBtn.disabled = running;
+            pauseBtn.disabled = !running;
+            pauseBtn.textContent = "Pause";
+        }
+
+        startBtn.addEventListener("click", () => {
+            if (sim.running) return;
+            sim.start();
+            setRunningUI(true);
+        });
         pauseBtn.addEventListener("click", () => {
-            if (sim.running) { sim.stop(); pauseBtn.textContent = "Resume"; }
+            if (sim.running) { sim.stop(); pauseBtn.textContent = "Resume"; startBtn.disabled = true; }
             else { sim.start(); pauseBtn.textContent = "Pause"; }
         });
-        document.getElementById("reset").addEventListener("click", () => sim.reset());
+        document.getElementById("reset").addEventListener("click", () => {
+            sim.stop();
+            sim.reset();
+            setRunningUI(false);
+        });
+        const colorsBtn = document.getElementById("colors");
+        colorsBtn.addEventListener("click", () => {
+            sim.showColor = !sim.showColor;
+            colorsBtn.textContent = "Colors: " + (sim.showColor ? "on" : "off");
+            colorsBtn.classList.toggle("toggle-on", sim.showColor);
+            if (!sim.running) sim.render(sim.ctx);
+        });
 
         // Force / boundary changes drive the wave behavior:
         //  - Slow-mo ON: reset the bar to rest (keep the new force live) so the step front
         //    propagates as a fresh wave from the loaded end(s) toward equilibrium.
         //  - Slow-mo OFF: jump straight to the static equilibrium.
         // Material/geometry/plane changes only re-render or re-settle without a fresh wave.
-        const waveControls = "#forceRight,#forceLeft,#fixLeft";
-        const settleControls = "#youngs,#poisson,#density,#length,#area,#normalAngle,#slowMo";
-        document.querySelectorAll(waveControls)
+        const allControls = "#forceRight,#forceLeft,#fixLeft,#youngs,#poisson,#density,#length,#area,#normalAngle,#slowMo,#timeScale,#damping";
+        document.querySelectorAll(allControls)
             .forEach(el => el.addEventListener("input", () => {
-                if (document.getElementById("slowMo").checked) {
-                    sim.init();          // rest state; force stays applied -> wave launches
-                } else {
-                    sim.init();
-                    sim._settle();
-                }
+                sim.init();          // reset to rest; forces/material are read live when Start is pressed
                 sim.render(sim.ctx);
             }));
-        document.querySelectorAll(settleControls)
-            .forEach(el => el.addEventListener("input", () => {
-                if (!document.getElementById("slowMo").checked) {
-                    sim.init();
-                    sim._settle();
-                }
-                sim.render(sim.ctx);
-            }));
+        // Slow-mo is a playback-speed toggle only: it never changes the Colors state.
+        document.getElementById("slowMo").addEventListener("change", () => {
+            // re-render to reflect the new time scale; keep Colors as-is.
+            sim.render(sim.ctx);
+        });
 
-        // Start at static equilibrium. Toggle Slow motion on, then change a force to launch a wave.
-        sim._settle();
+        // Do NOT auto-start: user configures the bar and presses Start to launch the wave.
+        setRunningUI(false);
         sim.render(sim.ctx);
-        sim.start();
-        pauseBtn.textContent = "Pause";
     </script>
 </body>
 </html>
