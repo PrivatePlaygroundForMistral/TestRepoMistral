@@ -19,7 +19,9 @@ browser, or any example directly.
 ├── js/
 │   └── sim.js               # shared framework: Vec2 helpers, Simulation base class
 └── examples/
-    └── particle_system.html # explicit-Euler particle system with a generator + lifespan
+    ├── particle_system.html # explicit-Euler particle system with a generator + lifespan
+    ├── stress_tensor.html   # 1D iron rod, stress wave, traction t = P·n hover
+    └── cantilever_bar.html  # clamped FEM beam, semi-implicit Euler, gravity swing
 ```
 
 ## Shared framework (`js/sim.js`)
@@ -57,6 +59,38 @@ browser, or any example directly.
 Controls: time step size, gravity, emission rate, life span, initial speed,
 plus Reset / Pause. Live stats show current time, time per sim. step, and the
 current particle count.
+
+## Example: Cantilever Bar (FEM Beam, Semi-Implicit Euler)
+
+`examples/cantilever_bar.html` models a horizontal rod **clamped at the left
+end** (fixed position and slope) and free elsewhere. The bar is
+**discretized** into N finite elements along its length and integrated with
+**semi-implicit (symplectic) Euler**:
+
+```
+v(t + dt) = v(t) + dt * a(t)        // update velocity with the current acceleration
+x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity
+```
+
+Using the updated velocity for the position update makes the integrator
+symplectic, so the oscillation stays bounded and decays only through the
+explicit damping term. Internal forces come from a small **finite element**
+model: an axial (membrane) spring `kA = E·A/dx` and a discrete Kirchhoff
+**bending** stiffness `kB = E·I/dx³` that penalizes curvature. Gravity is a
+constant downward body force on every node, so the free right end swings down
+and bounces back through the beam's bending modes. The default material is a
+soft rubber (low Young's modulus) so the bend and swing are clearly visible;
+raise `E` toward ~100–200 GPa for a stiff metal rod (small, fast motion).
+
+The bar is colored by the local axial/bending stress `σ_xx`; the 2D stress
+tensor `σ` combines `σ_xx` with a transverse shear `σ_xy`. Hovering the bar
+samples the tensor and shows the traction `t = σ·n` decomposed into its normal
+`t_n` and shear `t_s` components on the plane whose normal `n` you configure.
+
+Controls: time step size, gravity, Young's modulus, density, bar length,
+cross-section area, section height, element count, damping, plane normal
+angle, plus Reset / Pause. Live stats show current time, time per sim. step,
+and max |σ|.
 
 ## Adding a new example
 

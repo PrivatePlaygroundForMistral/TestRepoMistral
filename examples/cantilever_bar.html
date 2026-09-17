@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cantilever Bar (FEM Beam)</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <script src="../js/sim.js"></script>
+</head>
+<body class="example">
+    <div class="back"><a href="../index.html">&larr; back to examples</a></div>
+    <h1>Cantilever Bar &mdash; FEM Beam (Semi-Implicit Euler)</h1>
+    <p style="color:#555;margin:0.25rem 0 1rem">A rubber cantilever (soft, so the bend is visible); raise Young's modulus toward steel for a stiffer rod.</p>
+
+    <div class="sim">
+        <div class="canvas-wrap">
+            <canvas id="canvas" width="780" height="520">Your browser does not support the HTML5 canvas tag.</canvas>
+        </div>
+
+        <div class="controls">
+            <h3>Controls</h3>
+            <table>
+                <tr><td>Current time</td><td><input id="currentTime" value="0.00 s" disabled></td></tr>
+                <tr><td>Time per sim. step</td><td><input id="stepTime" value="0.00 ms" disabled></td></tr>
+                <tr><td>Max |&sigma;|</td><td><input id="maxStress" value="0.00 MPa" disabled></td></tr>
+                <tr><td>Time step size (s)</td><td><input id="timeStep" type="number" step="0.001" min="0.001" max="0.05" value="0.005"></td></tr>
+                <tr><td>Gravity g (m/s&sup2;)</td><td><input id="gravity" type="number" step="0.1" value="9.81"></td></tr>
+                <tr><td>Young's modulus E (GPa)</td><td><input id="youngs" type="number" step="0.001" value="0.02"></td></tr>
+                <tr><td>Density &rho; (kg/m&sup3;)</td><td><input id="density" type="number" step="100" value="1100"></td></tr>
+                <tr><td>Bar length L (m)</td><td><input id="length" type="number" step="0.1" value="1.0"></td></tr>
+                <tr><td>Cross-section b&times;h (m&sup2;)</td><td><input id="area" type="number" step="0.001" value="0.01"></td></tr>
+                <tr><td>Section height h (m)</td><td><input id="height" type="number" step="0.01" value="0.05"></td></tr>
+                <tr><td># elements N</td><td><input id="elements" type="number" step="2" min="4" max="400" value="40"></td></tr>
+                <tr><td>Damping (1/s)</td><td><input id="damping" type="number" step="0.1" value="1.0"></td></tr>
+                <tr><td>Plane normal angle (deg)</td><td><input id="normalAngle" type="number" step="1" value="0"></td></tr>
+            </table>
+            <button id="reset">Reset</button>
+            <button id="pause">Pause</button>
+            <p style="font-size:0.85em;color:#666;margin-top:0.5rem">The left end is clamped. Gravity pulls the free
+               right end down; it swings and bounces back, decaying through the beam's bending modes. Hover the bar to
+               sample the stress tensor and traction t = &sigma;&middot;n.</p>
+        </div>
+    </div>
+
+    <div class="description">
+        <p>A horizontal rod is <strong>clamped at the left end</strong> (fixed position and slope) and otherwise free.
+           It is <strong>discretized</strong> into N elements along its length and integrated with a
+           <strong>finite element</strong> force model plus <strong>semi-implicit (symplectic) Euler</strong>. The default
+           material is a soft <strong>rubber</strong> (low Young's modulus) so the bend and swing are clearly visible; raise
+           <code>E</code> toward ~100&ndash;200 GPa for a stiff metal rod (the motion then becomes small and fast).</p>
+        <pre><code>v(t + dt) = v(t) + dt * a(t)        // update velocity with the current acceleration
+x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre>
+        <p>Semi-implicit Euler uses the updated velocity for the position update, so it is symplectic and far better at
+           conserving energy in oscillatory systems than plain explicit Euler &mdash; the swing and bounce of the bar
+           stays bounded and only decays through the explicit damping term.</p>
+
+        <p>Each element resists axial stretch/compression through the Young's-modulus (membrane) energy
+           <code>&frac12; E A &epsilon;&sup2;</code> and bending through a discrete Kirchhoff bending energy
+           <code>&frac12; E I &kappa;&sup2;</code> built from the second difference of the node positions, which
+           penalizes curvature. Gravity is applied as a constant downward body force on every node. Because the left
+           end is clamped, the torque from gravity bends the bar downward on the right; the elastic restoring forces
+           swing it back, producing the damped oscillation you see.</p>
+
+        <p>The bar is colored by the local axial stress <code>&sigma;_xx</code> (red for tension, blue for
+           compression, white for zero). The 2D stress tensor at a sampled point combines the axial/bending stress on
+           the <code>xx</code> component with the transverse shear <code>&sigma;_xy</code> from the discrete bending
+           force; hovering shows the <strong>traction</strong> <code>t = &sigma;&middot;n</code> (green) decomposed
+           into its normal <code>t<sub>n</sub></code> (blue) and shear <code>t<sub>s</sub></code> (orange) components
+           on the plane whose normal <code>n</code> you configure.</p>
+    </div>
+
+    <script>
+        "use strict";
+
+        const Mat2 = {
+            mulVec(m, v) { return [m[0][0] * v[0] + m[0][1] * v[1], m[1][0] * v[0] + m[1][1] * v[1]]; }
+        };
+
+        // Diverging color map: white at 0, red at +1, blue at -1. t clamped to [-1,1].
+        function stressColor(t) {
+            t = Math.max(-1, Math.min(1, t));
+            let r, g, b;
+            if (t >= 0) {
+                r = 255; g = Math.round(255 * (1 - t)); b = Math.round(255 * (1 - t));
+            } else {
+                r = Math.round(255 * (1 + t)); g = Math.round(255 * (1 + t)); b = 255;
+            }
+            return `rgb(${r},${g},${b})`;
+        }
+
+        // A clamped cantilever beam integrated with semi-implicit Euler.
+        // State: per-node position x[], velocity v[] (each a {x,y}). Node 0 is clamped.
+        class CantileverBeam extends Simulation {
+            constructor(canvas) {
+                super(canvas);
+                this.N = 40;
+                this.x = null;       // node positions (world meters), array of {x,y}
+                this.v = null;       // node velocities, array of {x,y}
+                this.x0 = null;      // rest positions (straight, along +x)
+                this.sigma = null;   // per-element axial stress sigma_xx (Pa)
+                this.tau = null;     // per-node shear stress sigma_xy (Pa)
+                this.maxAbsSigma = 0;
+                this.mouse = null;
+                this.hoverWorld = null;
+                this.init();
+                this.render(this.ctx);
+                canvas.addEventListener("mousemove", (e) => this._onMove(e));
+            }
+
+            init() {
+                const L = Math.max(1e-6, numOr("length", 1.0));
+                const N = Math.max(4, Math.min(400, Math.round(numOr("elements", 40))));
+                this.N = N;
+                this.length0 = L;
+                this.dx = L / (N - 1);
+                this.x0 = new Array(N);
+                for (let i = 0; i < N; i++) this.x0[i] = { x: i * this.dx, y: 0 };
+                this.x = this.x0.map(p => ({ x: p.x, y: p.y }));
+                this.v = new Array(N);
+                for (let i = 0; i < N; i++) this.v[i] = { x: 0, y: 0 };
+                this.sigma = new Array(N - 1).fill(0);
+                this.tau = new Array(N).fill(0);
+                this.maxAbsSigma = 0;
+                this.hoverWorld = { wx: L * 0.5, wy: 0 };
+
+                // world -> pixels: beam starts at left margin, hangs to the right; gravity is +y (down).
+                const margin = 70;
+                const availW = this.width - 2 * margin;
+                const availH = this.height - 2 * margin;
+                // 1 m horizontal -> availW/L px; allow the tip to swing down ~0.7 m and stay on canvas.
+                const sx = availW / L;
+                const sy = availH / (L * 0.75);
+                this.scale = Math.min(sx, sy);
+                this.originPx = { x: margin, y: margin + availH * 0.12 };
+            }
+
+            // ---- material / derived parameters ----
+            _params() {
+                const E = Math.max(1e6, numOr("youngs", 100)) * 1e9;  // Pa
+                const rho = Math.max(1, numOr("density", 7850));
+                const A = Math.max(1e-9, numOr("area", 0.01));
+                const h = Math.max(1e-6, numOr("height", 0.05));
+                const I = Math.max(1e-18, A * h * h / 12);   // rectangular section second moment
+                const L = Math.max(1e-6, this.length0);
+                const dx = this.dx;
+                const m = rho * A * dx;          // node lumped mass
+                const kA = E * A / dx;           // axial spring stiffness between adjacent nodes
+                const kB = E * I / (dx * dx * dx); // bending stiffness (discrete Kirchhoff)
+                return { E, rho, A, h, I, L, dx, m, kA, kB };
+            }
+
+            // Compute internal node forces from axial + bending energies (FEM), plus gravity.
+            // Returns array of {fx,fy} per node.
+            _forces() {
+                const p = this._params();
+                const N = this.N;
+                const x = this.x;
+                const g = numOr("gravity", 9.81);
+                const f = new Array(N);
+                for (let i = 0; i < N; i++) f[i] = { fx: 0, fy: 0 };
+
+                // Axial (membrane) force: spring between adjacent nodes toward rest length dx.
+                // F on node i from link (i,i+1): kA * (|d| - dx) * d/|d|
+                for (let i = 0; i < N - 1; i++) {
+                    let ddx = x[i + 1].x - x[i].x;
+                    let ddy = x[i + 1].y - x[i].y;
+                    let len = Math.sqrt(ddx * ddx + ddy * ddy);
+                    if (len < 1e-12) continue;
+                    let s = p.kA * (len - p.dx) / len;
+                    let fx = s * ddx, fy = s * ddy;
+                    f[i].fx += fx;     f[i].fy += fy;
+                    f[i + 1].fx -= fx; f[i + 1].fy -= fy;
+                }
+
+                // Bending (Kirchhoff) force: penalize curvature via second difference of positions.
+                // Bending energy Ub = (1/2) kB * |x[i-1] - 2 x[i] + x[i+1]|^2.
+                // Force on node i = -dUb/dx[i] = -kB * (x[i-1] - 2 x[i] + x[i+1]) * (-2) ... => kB*2*(...) with sign.
+                // Using F_i = -dUb/dx_i gives: F_{i-1} -= kB * w; F_i += 2 kB * w; F_{i+1} -= kB * w, w = x[i-1]-2x[i]+x[i+1].
+                for (let i = 1; i < N - 1; i++) {
+                    let wx = x[i - 1].x - 2 * x[i].x + x[i + 1].x;
+                    let wy = x[i - 1].y - 2 * x[i].y + x[i + 1].y;
+                    let k = p.kB;
+                    f[i - 1].fx -= k * wx; f[i - 1].fy -= k * wy;
+                    f[i].fx     += 2 * k * wx; f[i].fy += 2 * k * wy;
+                    f[i + 1].fx -= k * wx; f[i + 1].fy -= k * wy;
+                }
+
+                // Gravity (body force) and velocity damping.
+                const damp = Math.max(0, numOr("damping", 2.0));
+                for (let i = 0; i < N; i++) {
+                    f[i].fy += p.m * g;                 // gravity pulls down (+y)
+                    f[i].fx -= damp * p.m * this.v[i].x;
+                    f[i].fy -= damp * p.m * this.v[i].y;
+                }
+                return f;
+            }
+
+            // One semi-implicit Euler step of physical time simDt, sub-stepped for stability.
+            _advance(simDt) {
+                const p = this._params();
+                const N = this.N;
+                // Estimate a CFL-safe sub-step from the stiffest mode:
+                //   axial chain -> 4 kA / m ; discrete bending (4th-difference) -> 16 kB / m.
+                // Semi-implicit Euler is stable for dt*omega < 2; use 0.2/omega for accuracy.
+                const omega = Math.sqrt(Math.max(16 * p.kB, 4 * p.kA) / Math.max(p.m, 1e-12));
+                const dtSub = Math.min(simDt, 0.2 / Math.max(omega, 1));
+                const steps = Math.max(1, Math.min(20000, Math.ceil(simDt / dtSub)));
+                const h = simDt / steps;
+                for (let s = 0; s < steps; s++) {
+                    const f = this._forces();
+                    // Semi-implicit Euler: velocity first (using current acceleration), then position with NEW velocity.
+                    for (let i = 0; i < N; i++) {
+                        if (i === 0) continue;            // clamp: node 0 fixed (position + velocity)
+                        this.v[i].x += (f[i].fx / p.m) * h;
+                        this.v[i].y += (f[i].fy / p.m) * h;
+                    }
+                    // Enforce clamped slope at the left end by mirroring node 1 onto the tangent at node 0.
+                    // After the position update, project node 1 back onto the +x axis (zero slope).
+                    for (let i = 0; i < N; i++) {
+                        if (i === 0) { this.x[i].x = 0; this.x[i].y = 0; this.v[i].x = 0; this.v[i].y = 0; continue; }
+                        this.x[i].x += this.v[i].x * h;
+                        this.x[i].y += this.v[i].y * h;
+                    }
+                    if (N > 1) {
+                        // Clamped slope: keep node 1 on the horizontal tangent (no rotation at the wall).
+                        this.x[1].y = 0; this.v[1].y = 0;
+                    }
+                }
+                this._computeStress();
+            }
+
+            // Per-element axial stress sigma_xx = E * (|d| - dx)/dx  (Pa), and a per-node
+            // transverse shear proxy from the bending force magnitude.
+            _computeStress() {
+                const p = this._params();
+                const N = this.N;
+                let mx = 0;
+                for (let i = 0; i < N - 1; i++) {
+                    let ddx = this.x[i + 1].x - this.x[i].x;
+                    let ddy = this.x[i + 1].y - this.x[i].y;
+                    let len = Math.sqrt(ddx * ddx + ddy * ddy);
+                    const eps = (len - p.dx) / p.dx;
+                    // Bending contributes a top/bottom-fiber stress E * kappa * (h/2); add the
+                    // magnitude from the discrete curvature to give a visible bending color.
+                    let kappa = 0;
+                    if (i > 0 && i < N - 2) {
+                        const wx = this.x[i].x - 2 * this.x[i + 1].x + this.x[i + 2].x;
+                        const wy = this.x[i].y - 2 * this.x[i + 1].y + this.x[i + 2].y;
+                        kappa = Math.sqrt(wx * wx + wy * wy) / (p.dx * p.dx);
+                    }
+                    const sxx = p.E * (eps + kappa * (p.h / 2));
+                    this.sigma[i] = sxx;
+                    if (Math.abs(sxx) > mx) mx = Math.abs(sxx);
+                }
+                this.maxAbsSigma = mx;
+                // Shear stress proxy: per-node bending force / A (Pa), as a transverse shear estimate.
+                const f = this._forces();
+                for (let i = 0; i < N; i++) {
+                    this.tau[i] = (f[i].fy) / Math.max(p.A, 1e-9);
+                }
+            }
+
+            // Local axial stress at world x along the beam (linear interp over elements). Pa.
+            _stressAt(wx) {
+                const p = this._params();
+                const x = Math.max(0, Math.min(p.L - 1e-9, wx));
+                const idx = x / p.dx;
+                const i = Math.max(0, Math.min(this.N - 2, Math.floor(idx)));
+                const frac = idx - i;
+                return this.sigma[i] * (1 - frac) + this.sigma[Math.min(this.N - 2, i + 1)] * frac;
+            }
+
+            // Local shear stress at world x (Pa).
+            _shearAt(wx) {
+                const p = this._params();
+                const x = Math.max(0, Math.min(p.L - 1e-9, wx));
+                const idx = x / p.dx;
+                const i = Math.max(0, Math.min(this.N - 1, Math.round(idx)));
+                return this.tau[i];
+            }
+
+            step(dt) {
+                this.dt = numOr("timeStep", 0.005);
+                this._advance(this.dt);
+            }
+
+            _onMove(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                this.mouse = {
+                    px: (e.clientX - rect.left) * (this.canvas.width / rect.width),
+                    py: (e.clientY - rect.top) * (this.canvas.height / rect.height)
+                };
+                this._readHover();
+                if (!this.running) this.render(this.ctx);
+            }
+
+            _readHover() {
+                if (!this.mouse) return;
+                // Convert pixel -> beam-local coordinates (origin at node 0, +x along the beam).
+                const wx = (this.mouse.px - this.originPx.x) / this.scale;
+                const wy = (this.mouse.py - this.originPx.y) / this.scale;
+                if (wx >= 0 && wx <= this.length0 && Math.abs(wy) <= this.length0 * 0.15) {
+                    this.hoverWorld = { wx, wy };
+                }
+            }
+
+            // ---- rendering ----
+            render(ctx) {
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, 0, this.width, this.height);
+
+                const angle = numOr("normalAngle", 0) * Math.PI / 180;
+                const n = [Math.cos(angle), Math.sin(angle)];
+                const sH = this.hoverWorld ? this._stressAt(this.hoverWorld.wx) : 0;
+                const tH = this.hoverWorld ? this._shearAt(this.hoverWorld.wx) : 0;
+                // 2D stress tensor: sigma_xx = axial+bending, sigma_yy ~ 0 (free surface), sigma_xy = shear.
+                const S = [[sH, tH], [tH, 0]];
+
+                this._drawWall(ctx);
+                this._drawBar(ctx);
+                this._drawPlane(ctx, n);
+                this._drawTensorPanel(ctx, S, n, sH, tH);
+                if (this.hoverWorld) this._drawHover(ctx, S, n);
+                this._updateStats();
+            }
+
+            _drawWall(ctx) {
+                const s = this.scale;
+                const o = this.originPx;
+                const p = this._params();
+                const yTop = o.y - 30;
+                const yBot = o.y + 30;
+                // Hatched wall just to the left of node 0.
+                ctx.save();
+                ctx.fillStyle = "#d8d8df";
+                ctx.fillRect(o.x - 16, yTop, 14, yBot - yTop);
+                ctx.strokeStyle = "#888";
+                ctx.lineWidth = 1;
+                for (let y = yTop; y < yBot; y += 6) {
+                    ctx.beginPath();
+                    ctx.moveTo(o.x - 16, y);
+                    ctx.lineTo(o.x - 16 + 10, y + 6);
+                    ctx.stroke();
+                }
+                ctx.strokeStyle = "#444";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(o.x - 2, yTop);
+                ctx.lineTo(o.x - 2, yBot);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Draw the bar element-by-element colored by local axial stress.
+            _drawBar(ctx) {
+                const s = this.scale;
+                const o = this.originPx;
+                const N = this.N;
+                const x = this.x;
+                const p = this._params();
+                const yHalfPx = Math.max(6, (p.h / 2) * s * 2);   // bar half-thickness in pixels
+                // color autoscale: reference cantilever tip stress ~ rho g L^2 / (2 h) under self weight.
+                const sigRef = (p.rho * numOr("gravity", 9.81) * p.L * p.L) / (2 * Math.max(p.h, 1e-6));
+                const scale = Math.max(sigRef, this.maxAbsSigma, 1);
+
+                // reference (undeformed) outline, dashed.
+                ctx.save();
+                ctx.strokeStyle = "#bbb";
+                ctx.setLineDash([4, 4]);
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(o.x, o.y - yHalfPx);
+                ctx.lineTo(o.x + p.L * s, o.y - yHalfPx);
+                ctx.lineTo(o.x + p.L * s, o.y + yHalfPx);
+                ctx.lineTo(o.x, o.y + yHalfPx);
+                ctx.stroke();
+                ctx.restore();
+
+                // filled colored segments along the deformed centerline.
+                for (let i = 0; i < N - 1; i++) {
+                    const ax = o.x + x[i].x * s;
+                    const ay = o.y + x[i].y * s;
+                    const bx = o.x + x[i + 1].x * s;
+                    const by = o.y + x[i + 1].y * s;
+                    const dx = bx - ax, dy = by - ay;
+                    const len = Math.hypot(dx, dy) || 1;
+                    const nx = -dy / len, ny = dx / len;
+                    const t = this.sigma[i] / scale;
+                    ctx.fillStyle = stressColor(t);
+                    ctx.beginPath();
+                    ctx.moveTo(ax + nx * yHalfPx, ay + ny * yHalfPx);
+                    ctx.lineTo(bx + nx * yHalfPx, by + ny * yHalfPx);
+                    ctx.lineTo(bx - nx * yHalfPx, by - ny * yHalfPx);
+                    ctx.lineTo(ax - nx * yHalfPx, ay - ny * yHalfPx);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                // deformed outline.
+                ctx.save();
+                ctx.strokeStyle = "#44506a";
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                for (let i = 0; i < N; i++) {
+                    const ax = o.x + x[i].x * s;
+                    const ay = o.y + x[i].y * s;
+                    const dx = (i < N - 1) ? x[i + 1].x - x[i].x : x[i].x - x[i - 1].x;
+                    const dy = (i < N - 1) ? x[i + 1].y - x[i].y : x[i].y - x[i - 1].y;
+                    const len = Math.hypot(dx, dy) || 1;
+                    const nx = -dy / len, ny = dx / len;
+                    const px = ax + nx * yHalfPx, py = ay + ny * yHalfPx;
+                    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                }
+                for (let i = N - 1; i >= 0; i--) {
+                    const ax = o.x + x[i].x * s;
+                    const ay = o.y + x[i].y * s;
+                    const dx = (i < N - 1) ? x[i + 1].x - x[i].x : x[i].x - x[i - 1].x;
+                    const dy = (i < N - 1) ? x[i + 1].y - x[i].y : x[i].y - x[i - 1].y;
+                    const len = Math.hypot(dx, dy) || 1;
+                    const nx = -dy / len, ny = dx / len;
+                    const px = ax - nx * yHalfPx, py = ay - ny * yHalfPx;
+                    ctx.lineTo(px, py);
+                }
+                ctx.closePath();
+                ctx.stroke();
+                ctx.restore();
+
+                // gravity arrow at the free tip.
+                const tipX = o.x + x[N - 1].x * s;
+                const tipY = o.y + x[N - 1].y * s;
+                ctx.save();
+                ctx.strokeStyle = "#555";
+                ctx.fillStyle = "#555";
+                ctx.lineWidth = 2;
+                this._arrow(ctx, tipX + 16, tipY - 28, tipX + 16, tipY - 6, 8);
+                ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
+                ctx.fillText("g", tipX + 22, tipY - 14);
+                ctx.restore();
+            }
+
+            // Draw the cutting plane through the sampled hover point.
+            _drawPlane(ctx, n) {
+                const s = this.scale;
+                const o = this.originPx;
+                const anchor = this.hoverWorld || { wx: this.length0 * 0.5, wy: 0 };
+                const pxC = { x: o.x + anchor.wx * s, y: o.y + anchor.wy * s };
+                const d = [-n[1], n[0]];
+                const big = Math.max(this.width, this.height);
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(pxC.x + n[0] * big + d[0] * big, pxC.y + n[1] * big + d[1] * big);
+                ctx.lineTo(pxC.x + n[0] * big - d[0] * big, pxC.y + n[1] * big - d[1] * big);
+                ctx.lineTo(pxC.x - n[0] * big - d[0] * big, pxC.y - n[1] * big - d[1] * big);
+                ctx.lineTo(pxC.x - n[0] * big + d[0] * big, pxC.y - n[1] * big + d[1] * big);
+                ctx.closePath();
+                ctx.fillStyle = "rgba(52,152,219,0.12)";
+                ctx.fill();
+                ctx.restore();
+
+                ctx.save();
+                ctx.strokeStyle = "#2980b9";
+                ctx.lineWidth = 2;
+                ctx.setLineDash([6, 4]);
+                ctx.beginPath();
+                ctx.moveTo(pxC.x + d[0] * big, pxC.y + d[1] * big);
+                ctx.lineTo(pxC.x - d[0] * big, pxC.y - d[1] * big);
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.save();
+                ctx.strokeStyle = "#1b6ca8";
+                ctx.fillStyle = "#1b6ca8";
+                ctx.lineWidth = 2;
+                const nlen = 44;
+                this._arrow(ctx, pxC.x, pxC.y, pxC.x + n[0] * nlen, pxC.y + n[1] * nlen, 8);
+                ctx.font = "italic 14px ui-monospace, Menlo, Consolas, monospace";
+                ctx.fillText("n", pxC.x + n[0] * nlen + 6, pxC.y + n[1] * nlen + 4);
+                ctx.restore();
+            }
+
+            _arrow(ctx, x1, y1, x2, y2, head) {
+                const dx = x2 - x1, dy = y2 - y1;
+                if (Math.hypot(dx, dy) < 1) return;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+                const ang = Math.atan2(dy, dx);
+                ctx.beginPath();
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 - head * Math.cos(ang - 0.4), y2 - head * Math.sin(ang - 0.4));
+                ctx.lineTo(x2 - head * Math.cos(ang + 0.4), y2 - head * Math.sin(ang + 0.4));
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            _drawHover(ctx, S, n) {
+                const s = this.scale;
+                const o = this.originPx;
+                const px = o.x + this.hoverWorld.wx * s;
+                const py = o.y + this.hoverWorld.wy * s;
+                const t = Mat2.mulVec(S, n);
+                const vlen = 90 / 1e6;   // 90 px per MPa
+
+                const ex = px + t[0] * vlen;
+                const ey = py + t[1] * vlen;
+                ctx.save();
+                ctx.strokeStyle = "#27ae60";
+                ctx.fillStyle = "#27ae60";
+                ctx.lineWidth = 3;
+                this._arrow(ctx, px, py, ex, ey, 12);
+                ctx.font = "italic 15px ui-monospace, Menlo, Consolas, monospace";
+                ctx.fillText("t", ex + 8, ey + 5);
+                ctx.restore();
+
+                const tnScalar = t[0] * n[0] + t[1] * n[1];
+                const tnx = tnScalar * n[0], tny = tnScalar * n[1];
+                const tsx = t[0] - tnx, tsy = t[1] - tny;
+                const enx = px + tnx * vlen, eny = py + tny * vlen;
+                const esx = px + tsx * vlen, esy = py + tsy * vlen;
+
+                if (Math.hypot(tnx, tny) * vlen > 3) {
+                    ctx.save();
+                    ctx.strokeStyle = "#1b6ca8"; ctx.fillStyle = "#1b6ca8"; ctx.lineWidth = 2;
+                    this._arrow(ctx, px, py, enx, eny, 9);
+                    ctx.font = "italic 13px ui-monospace, Menlo, Consolas, monospace";
+                    ctx.fillText("t_n", enx - 22, eny - 6);
+                    ctx.restore();
+                }
+                if (Math.hypot(tsx, tsy) * vlen > 3) {
+                    ctx.save();
+                    ctx.strokeStyle = "#e67e22"; ctx.fillStyle = "#e67e22"; ctx.lineWidth = 2;
+                    this._arrow(ctx, px, py, esx, esy, 9);
+                    ctx.font = "italic 13px ui-monospace, Menlo, Consolas, monospace";
+                    ctx.fillText("t_s", esx + 8, esy + 5);
+                    ctx.restore();
+                }
+            }
+
+            _drawTensorPanel(ctx, S, n, sH, tH) {
+                const t = Mat2.mulVec(S, n);
+                const inMPa = (v) => (v / 1e6).toFixed(3);
+                const fmt = (v) => (Math.abs(v) < 1e3 ? "0" : inMPa(v) + " MPa");
+                const nAngDeg = numOr("normalAngle", 0);
+                const tn = t[0] * n[0] + t[1] * n[1];
+                const tsMag = Math.hypot(t[0] - tn * n[0], t[1] - tn * n[1]);
+
+                const lines = [
+                    "Stress tensor &sigma; (MPa):",
+                    `  [ ${fmt(S[0][0])}  ${fmt(S[0][1])} ]`,
+                    `  [ ${fmt(S[1][0])}  ${fmt(S[1][1])} ]`,
+                    "",
+                    `sample &sigma;_xx = ${fmt(sH)}`,
+                    `sample &sigma;_xy = ${fmt(tH)}`,
+                    `normal n = (${n[0].toFixed(3)}, ${n[1].toFixed(3)})  (${nAngDeg}\u00b0)`,
+                    `traction t = &sigma;&middot;n = (${inMPa(t[0])}, ${inMPa(t[1])}) MPa`,
+                    `  |t_n| = ${inMPa(Math.abs(tn))} MPa  (normal)`,
+                    `  |t_s| = ${inMPa(tsMag)} MPa  (shear)`
+                ];
+
+                ctx.save();
+                ctx.font = "13px ui-monospace, Menlo, Consolas, monospace";
+                const pad = 8, lineH = 16, w = 310;
+                const h = lines.length * lineH + pad * 2;
+                const x = 12, y = this.height - h - 12;
+                ctx.fillStyle = "rgba(255,255,255,0.92)";
+                ctx.strokeStyle = "#d0d0d8"; ctx.lineWidth = 1;
+                ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h);
+                ctx.fillStyle = "#1a1a1a";
+                lines.forEach((ln, i) => ctx.fillText(ln, x + pad, y + pad + (i + 1) * lineH - 3));
+                ctx.restore();
+            }
+
+            _updateStats() {
+                const ct = document.getElementById("currentTime");
+                const st = document.getElementById("stepTime");
+                const ms = document.getElementById("maxStress");
+                if (ct) ct.value = this.time.toFixed(3) + " s";
+                if (st) st.value = this.stepTime.toFixed(2) + " ms";
+                if (ms) ms.value = (this.maxAbsSigma / 1e6).toFixed(3) + " MPa";
+            }
+        }
+
+        const canvas = document.getElementById("canvas");
+        const sim = new CantileverBeam(canvas);
+
+        const pauseBtn = document.getElementById("pause");
+        pauseBtn.addEventListener("click", () => {
+            if (sim.running) { sim.stop(); pauseBtn.textContent = "Resume"; }
+            else { sim.start(); pauseBtn.textContent = "Pause"; }
+        });
+        document.getElementById("reset").addEventListener("click", () => sim.reset());
+
+        // Geometry/material/gravity changes rebuild the model and restart from rest.
+        const rebuildControls = "#gravity,#youngs,#density,#length,#area,#height,#elements,#damping,#timeStep";
+        document.querySelectorAll(rebuildControls)
+            .forEach(el => el.addEventListener("input", () => {
+                sim.init();
+                sim.render(sim.ctx);
+            }));
+        document.getElementById("normalAngle")
+            .addEventListener("input", () => sim.render(sim.ctx));
+
+        // Start immediately: gravity bends the bar down and it swings/bounces back.
+        sim.start();
+        pauseBtn.textContent = "Pause";
+    </script>
+</body>
+</html>
