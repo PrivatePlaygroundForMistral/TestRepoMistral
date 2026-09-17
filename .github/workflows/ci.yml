@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Syntax-check shared JS
+        run: node --check js/sim.js
+
+      - name: Compile-check inline example scripts
+        run: |
+          set -e
+          for f in examples/*.html; do
+            echo "checking $f"
+            node -e "
+              const fs = require('fs');
+              const html = fs.readFileSync(process.argv[1], 'utf8');
+              const m = html.match(/<script>([\s\S]*?)<\/script>\s*<\/body>/);
+              if (!m) { console.error('no inline script found'); process.exit(1); }
+              require('vm').compileFunction(m[1], [
+                'Simulation','Vec2','num','numOr','document','performance',
+                'requestAnimationFrame','cancelAnimationFrame','Math'
+              ]);
+            " "$f"
+          done
