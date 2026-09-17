@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stress Tensor (Iron Bar)</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <script src="../js/sim.js"></script>
+</head>
+<body class="example">
+    <div class="back"><a href="../index.html">&larr; back to examples</a></div>
+    <h1>Stress Tensor &mdash; Iron Bar under Axial Load</h1>
+
+    <div class="sim">
+        <div class="canvas-wrap">
+            <canvas id="canvas" width="780" height="500">Your browser does not support the HTML5 canvas tag.</canvas>
+        </div>
+
+        <div class="controls">
+            <h3>Controls</h3>
+            <table>
+                <tr><td>Current time</td><td><input id="currentTime" value="0.00 s" disabled></td></tr>
+                <tr><td>Time per sim. step</td><td><input id="stepTime" value="0.00 ms" disabled></td></tr>
+                <tr><td>Applied force (N)</td><td><input id="force" type="number" step="100" value="0"></td></tr>
+                <tr><td>Force location</td>
+                    <td><select id="forceSide">
+                        <option value="left">left end (positive force &rarr; compression)</option>
+                        <option value="right" selected>right end (positive force &rarr; tension)</option>
+                    </select></td></tr>
+                <tr><td>Young's modulus k (GPa)</td><td><input id="youngs" type="number" step="1" value="200"></td></tr>
+                <tr><td>Poisson ratio &nu;</td><td><input id="poisson" type="number" step="0.01" min="0" max="0.49" value="0.27"></td></tr>
+                <tr><td>Bar length L (m)</td><td><input id="length" type="number" step="0.1" value="2.0"></td></tr>
+                <tr><td>Bar cross-section A (m&sup2;)</td><td><input id="area" type="number" step="0.001" value="0.01"></td></tr>
+                <tr><td>Plane normal angle (deg)</td><td><input id="normalAngle" type="number" step="1" value="0"></td></tr>
+                <tr><td>Show principal stress &sigma;</td><td><input id="showSigma" type="checkbox" checked></td></tr>
+            </table>
+            <button id="reset">Reset</button>
+            <button id="pause">Pause</button>
+            <p style="font-size:0.85em;color:#666;margin-top:0.5rem">Hover the bar to sample the stress tensor and traction at the cursor.</p>
+        </div>
+    </div>
+
+    <div class="description">
+        <p>This example illustrates the <strong>stress tensor</strong> and the
+           <strong>Cauchy stress theorem</strong> <code>t = P&middot;n</code> on a
+           2D iron bar under an axial load. The bar uses a simple uniaxial-stress
+           model (linear elasticity with a Poisson-driven lateral contraction), so the
+           only nonzero stress component is the axial one &sigma; = F / A.</p>
+
+        <p>The first Piola-Kirchhoff stress tensor here is the diagonal matrix
+           <code>P = diag(&sigma;, &sigma;&middot;&nu;)</code> (the transverse term is the
+           lateral stress needed to keep the surfaces free in 1D). The bar itself is drawn
+           with its reference outline and deformed outline so the Poisson contraction is visible.</p>
+
+        <p>You configure a <strong>plane normal</strong> <code>n</code> by its angle. The
+           dashed line is the plane itself (perpendicular to <code>n</code>); the region on the
+           positive side of the plane is tinted. The <strong>traction</strong>
+           <code>t = P&middot;n</code> is the force per unit area that the material on the
+           positive side exerts on the material on the negative side across that plane. Rotate
+           the normal and notice how a purely axial stress produces both a normal and a
+           shear component of <code>t</code> on an inclined plane &mdash; this is exactly why
+           stress is a tensor and not a scalar.</p>
+    </div>
+
+    <script>
+        "use strict";
+
+        // ---- 2D matrix helpers on plain number arrays [[a,b],[c,d]] ----
+        const Mat2 = {
+            mulVec(m, v) { return [m[0][0] * v[0] + m[0][1] * v[1], m[1][0] * v[0] + m[1][1] * v[1]]; }
+        };
+
+        class StressBar extends Simulation {
+            constructor(canvas) {
+                super(canvas);
+                // world (metres) -> pixels scale, fit to canvas with margin
+                this.scale = 0;
+                this.mouse = null;          // {wx, wy} in metres or null
+                this.init();
+                this.render(this.ctx);
+
+                canvas.addEventListener("mousemove", (e) => this._onMove(e));
+                canvas.addEventListener("mouseleave", () => { this.mouse = null; });
+            }
+
+            init() {
+                const L = numOr("length", 2.0);
+                const H = 0.4; // bar thickness in metres (visual)
+                this.length0 = L;
+                this.height0 = H;
+                // fit: leave margin for force arrows
+                const margin = 80;
+                this.scale = Math.min((this.width - 2 * margin) / L, (this.height - 2 * margin) / (H * 6));
+                this.centerPx = { x: this.width / 2, y: this.height / 2 };
+            }
+
+            // ---- physics ----
+            // Compute current deformed half-length and half-height from the load.
+            getDeformation() {
+                const F = numOr("force", 0);
+                const side = document.getElementById("forceSide").value;
+                // signed force pulling along +x on the right end / -x on left.
+                // Positive "force" => tension when applied on right end, compression on left.
+                let Faxial = (side === "right") ? F : -F;
+                const k = Math.max(1e-6, numOr("youngs", 200)) * 1e9; // GPa -> Pa
+                const nu = Math.max(0, Math.min(0.49, numOr("poisson", 0.27)));
+                const A = Math.max(1e-9, numOr("area", 0.01));
+                const L = Math.max(1e-6, this.length0);
+
+                const sigma = Faxial / A;                 // axial stress (Pa)
+                const eps = sigma / k;                    // axial strain (small)
+                const epsLat = -nu * eps;                  // lateral strain (contraction)
+
+                const curL = L * (1 + eps);
+                const curH = this.height0 * (1 + epsLat);
+                return { sigma, nu, L, curL, curH, eps, epsLat };
+            }
+
+            // First Piola-Kirchhoff stress tensor in 2D (uniaxial model).
+            stressTensor() {
+                const { sigma, nu } = this.getDeformation();
+                // P = [[sigma, 0], [sigma*nu, 0]] keeps lateral faces traction-free
+                // in a 1D model (the transverse row is the lateral stress). We display
+                // the symmetric axial interpretation: diag(sigma, sigma*nu).
+                return [[sigma, 0], [sigma * nu, 0]];
+            }
+
+            // We don't animate time-stepping physics; the bar is a static equilibrium
+            // view driven by the controls. Keep the loop only to redraw on hover.
+            step(dt) {
+                const angle = numOr("normalAngle", 0) * Math.PI / 180;
+                this.nx = Math.cos(angle);
+                this.ny = Math.sin(angle);
+                this._readHover();
+            }
+
+            _onMove(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                this.mouse = {
+                    px: (e.clientX - rect.left) * (this.canvas.width / rect.width),
+                    py: (e.clientY - rect.top) * (this.canvas.height / rect.height)
+                };
+                this._readHover();
+                if (!this.running) this.render(this.ctx);
+            }
+
+            _readHover() {
+                if (!this.mouse) { this.hoverWorld = null; return; }
+                const wx = (this.mouse.px - this.centerPx.x) / this.scale;
+                const wy = (this.mouse.py - this.centerPx.y) / this.scale;
+                const { curL, curH } = this.getDeformation();
+                // hit-test against deformed bar rectangle
+                if (Math.abs(wx) <= curL / 2 && Math.abs(wy) <= curH / 2) {
+                    this.hoverWorld = { wx, wy };
+                } else {
+                    this.hoverWorld = null;
+                }
+            }
+
+            // ---- rendering ----
+            render(ctx) {
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, 0, this.width, this.height);
+
+                const { sigma, curL, curH, eps, epsLat } = this.getDeformation();
+                const P = this.stressTensor();
+                const angle = numOr("normalAngle", 0) * Math.PI / 180;
+                const n = [Math.cos(angle), Math.sin(angle)];
+
+                this._drawBar(ctx, curL, curH);
+                this._drawForceArrows(ctx, curL, curH);
+                this._drawPlane(ctx, n, curL, curH);
+                this._drawTensorPanel(ctx, P, n, sigma);
+                if (this.hoverWorld) this._drawHover(ctx, P, n, curL, curH);
+            }
+
+            _drawBar(ctx, curL, curH) {
+                const s = this.scale;
+                const c = this.centerPx;
+                const refL = this.length0, refH = this.height0;
+
+                // reference outline (dashed)
+                ctx.save();
+                ctx.strokeStyle = "#bbb";
+                ctx.setLineDash([4, 4]);
+                ctx.lineWidth = 1;
+                ctx.strokeRect(c.x - refL / 2 * s, c.y - refH / 2 * s, refL * s, refH * s);
+                ctx.restore();
+
+                // deformed bar
+                ctx.save();
+                ctx.fillStyle = "rgba(120,130,150,0.25)";
+                ctx.strokeStyle = "#44506a";
+                ctx.lineWidth = 2;
+                const x = c.x - curL / 2 * s;
+                const y = c.y - curH / 2 * s;
+                ctx.fillRect(x, y, curL * s, curH * s);
+                ctx.strokeRect(x, y, curL * s, curH * s);
+
+                // hatching to read as solid
+                ctx.strokeStyle = "rgba(60,70,90,0.25)";
+                ctx.lineWidth = 1;
+                for (let i = -curH / 2; i <= curH / 2; i += 0.05) {
+                    ctx.beginPath();
+                    ctx.moveTo(c.x - curL / 2 * s, c.y + i * s);
+                    ctx.lineTo(c.x + curL / 2 * s, c.y + i * s);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            _drawForceArrows(ctx, curL, curH) {
+                const s = this.scale;
+                const c = this.centerPx;
+                const F = numOr("force", 0);
+                const side = document.getElementById("forceSide").value;
+                if (F === 0) return;
+
+                // Arrow direction: applied force points along its sign. We draw it at the
+                // chosen end, pointing outward for tension, inward for compression.
+                const sign = (side === "right") ? 1 : -1;       // end location sign
+                const dir = Math.sign(F);                       // force direction in +x
+                const len = Math.min(70, 18 + Math.abs(F) / 1000 * 0.5);
+                const startX = c.x + sign * (curL / 2) * s;
+                const tipX = startX + dir * len;
+                ctx.save();
+                ctx.strokeStyle = "#c0392b";
+                ctx.fillStyle = "#c0392b";
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(startX, c.y);
+                ctx.lineTo(tipX, c.y);
+                ctx.stroke();
+                // arrowhead
+                const ah = 8;
+                ctx.beginPath();
+                ctx.moveTo(tipX, c.y);
+                ctx.lineTo(tipX - dir * ah, c.y - ah / 2);
+                ctx.lineTo(tipX - dir * ah, c.y + ah / 2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Draw the cutting plane (line perpendicular to n) through the hover point
+            // (or center), tint the positive side.
+            _drawPlane(ctx, n, curL, curH) {
+                const s = this.scale;
+                const c = this.centerPx;
+                const anchor = this.hoverWorld || { wx: 0, wy: 0 };
+                const pxC = { x: c.x + anchor.wx * s, y: c.y + anchor.wy * s };
+
+                // plane direction (perpendicular to n)
+                const d = [-n[1], n[0]];
+                // extend line across the whole canvas
+                const big = Math.max(this.width, this.height);
+
+                // tint positive side (half-plane n.(x-anchor) > 0)
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(pxC.x + n[0] * big + d[0] * big, pxC.y + n[1] * big + d[1] * big);
+                ctx.lineTo(pxC.x + n[0] * big - d[0] * big, pxC.y + n[1] * big - d[1] * big);
+                ctx.lineTo(pxC.x - n[0] * big - d[0] * big, pxC.y - n[1] * big - d[1] * big);
+                ctx.lineTo(pxC.x - n[0] * big + d[0] * big, pxC.y - n[1] * big + d[1] * big);
+                ctx.closePath();
+                ctx.fillStyle = "rgba(52,152,219,0.18)";
+                ctx.fill();
+                ctx.restore();
+
+                // the plane line
+                ctx.save();
+                ctx.strokeStyle = "#2980b9";
+                ctx.lineWidth = 2;
+                ctx.setLineDash([6, 4]);
+                ctx.beginPath();
+                ctx.moveTo(pxC.x + d[0] * big, pxC.y + d[1] * big);
+                ctx.lineTo(pxC.x - d[0] * big, pxC.y - d[1] * big);
+                ctx.stroke();
+                ctx.restore();
+
+                // normal vector arrow at the plane anchor
+                ctx.save();
+                ctx.strokeStyle = "#1b6ca8";
+                ctx.fillStyle = "#1b6ca8";
+                ctx.lineWidth = 2;
+                const nlen = 40;
+                const nx2 = pxC.x + n[0] * nlen;
+                const ny2 = pxC.y + n[1] * nlen;
+                ctx.beginPath();
+                ctx.moveTo(pxC.x, pxC.y);
+                ctx.lineTo(nx2, ny2);
+                ctx.stroke();
+                const ang = Math.atan2(n[1], n[0]);
+                const ah = 8;
+                ctx.beginPath();
+                ctx.moveTo(nx2, ny2);
+                ctx.lineTo(nx2 - ah * Math.cos(ang - 0.4), ny2 - ah * Math.sin(ang - 0.4));
+                ctx.lineTo(nx2 - ah * Math.cos(ang + 0.4), ny2 - ah * Math.sin(ang + 0.4));
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+
+            _drawHover(ctx, P, n, curL, curH) {
+                const s = this.scale;
+                const c = this.centerPx;
+                const px = c.x + this.hoverWorld.wx * s;
+                const py = c.y + this.hoverWorld.wy * s;
+                const t = Mat2.mulVec(P, n);
+
+                // traction vector at the hover point
+                ctx.save();
+                ctx.strokeStyle = "#27ae60";
+                ctx.fillStyle = "#27ae60";
+                ctx.lineWidth = 3;
+                const vlen = 0.000000004; // world->px scale for traction (visual)
+                const ex = px + t[0] * vlen * s;
+                const ey = py + t[1] * vlen * s;
+                ctx.beginPath();
+                ctx.moveTo(px, py);
+                ctx.lineTo(ex, ey);
+                ctx.stroke();
+                const ang = Math.atan2(ey - py, ex - px);
+                const ah = 10;
+                ctx.beginPath();
+                ctx.moveTo(ex, ey);
+                ctx.lineTo(ex - ah * Math.cos(ang - 0.4), ey - ah * Math.sin(ang - 0.4));
+                ctx.lineTo(ex - ah * Math.cos(ang + 0.4), ey - ah * Math.sin(ang + 0.4));
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+
+            _drawTensorPanel(ctx, P, n, sigma) {
+                const t = Mat2.mulVec(P, n);
+                const inGPa = (v) => (v / 1e9).toExponential(3);
+                const fmt = (v) => {
+                    if (Math.abs(v) < 1e6) return "0";
+                    return inGPa(v) + " GPa";
+                };
+                const nAngDeg = numOr("normalAngle", 0);
+
+                const lines = [
+                    "Stress tensor P (GPa):",
+                    `  [ ${fmt(P[0][0])}  ${fmt(P[0][1])} ]`,
+                    `  [ ${fmt(P[1][0])}  ${fmt(P[1][1])} ]`,
+                    "",
+                    `normal n = (${n[0].toFixed(3)}, ${n[1].toFixed(3)})  (${nAngDeg}°)`,
+                    `traction t = P·n = (${inGPa(t[0])}, ${inGPa(t[1])}) GPa`,
+                    `  |t| = ${inGPa(Math.hypot(t[0], t[1]))} GPa`
+                ];
+
+                ctx.save();
+                ctx.font = "13px ui-monospace, Menlo, Consolas, monospace";
+                const pad = 8;
+                const lineH = 16;
+                const w = 290;
+                const h = lines.length * lineH + pad * 2;
+                const x = 12, y = 12;
+                ctx.fillStyle = "rgba(255,255,255,0.92)";
+                ctx.strokeStyle = "#d0d0d8";
+                ctx.lineWidth = 1;
+                ctx.fillRect(x, y, w, h);
+                ctx.strokeRect(x, y, w, h);
+                ctx.fillStyle = "#1a1a1a";
+                lines.forEach((ln, i) => ctx.fillText(ln, x + pad, y + pad + (i + 1) * lineH - 3));
+                ctx.restore();
+            }
+
+            _updateStats() {
+                const ct = document.getElementById("currentTime");
+                const st = document.getElementById("stepTime");
+                if (ct) ct.value = this.time.toFixed(2) + " s";
+                if (st) st.value = this.stepTime.toFixed(2) + " ms";
+            }
+        }
+
+        const canvas = document.getElementById("canvas");
+        const sim = new StressBar(canvas);
+
+        const pauseBtn = document.getElementById("pause");
+        pauseBtn.addEventListener("click", () => {
+            if (sim.running) { sim.stop(); pauseBtn.textContent = "Resume"; }
+            else { sim.start(); pauseBtn.textContent = "Pause"; }
+        });
+        document.getElementById("reset").addEventListener("click", () => sim.reset());
+
+        // redraw whenever a control changes (the bar is equilibrium-driven)
+        document.querySelectorAll("#force,#forceSide,#youngs,#poisson,#length,#area,#normalAngle")
+            .forEach(el => el.addEventListener("input", () => sim.render(sim.ctx)));
+
+        sim.start();
+        pauseBtn.textContent = "Pause";
+    </script>
+</body>
+</html>
