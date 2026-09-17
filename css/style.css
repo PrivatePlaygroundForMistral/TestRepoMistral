@@ -75,15 +75,13 @@ canvas {
     border-radius: 4px;
     padding: 0.75rem 1rem;
     min-width: 260px;
-    width: 300px;
+    width: 320px;
     align-self: flex-start;
-    overflow: hidden;
 }
 
 .controls table {
     border-collapse: collapse;
     width: 100%;
-    table-layout: fixed;
 }
 
 .controls td {
@@ -94,19 +92,19 @@ canvas {
 .controls td:first-child {
     white-space: nowrap;
     color: #444;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .controls td:last-child {
-    width: 7.5rem;
+    width: 8rem;
     padding-right: 0;
 }
 
 .controls input[type="number"],
 .controls input[type="range"],
-.controls select {
+.controls select,
+.controls input[disabled] {
     width: 100%;
+    min-width: 0;
     box-sizing: border-box;
 }
 
