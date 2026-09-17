@@ -48,17 +48,23 @@
            only nonzero stress component is the axial one &sigma; = F / A.</p>
 
         <p>The first Piola-Kirchhoff stress tensor here is the diagonal matrix
-           <code>P = diag(&sigma;, &sigma;&middot;&nu;)</code> (the transverse term is the
-           lateral stress needed to keep the surfaces free in 1D). The bar itself is drawn
-           with its reference outline and deformed outline so the Poisson contraction is visible.</p>
+           <code>P = diag(&sigma;, 0)</code>: only the axial component is nonzero, since the
+           lateral surfaces are stress-free. The Poisson ratio affects only the
+           <em>deformation</em> (the visible lateral contraction), not the stress. The bar is
+           drawn with its reference outline (dashed) and deformed outline so the Poisson
+           contraction is visible.</p>
 
         <p>You configure a <strong>plane normal</strong> <code>n</code> by its angle. The
            dashed line is the plane itself (perpendicular to <code>n</code>); the region on the
            positive side of the plane is tinted. The <strong>traction</strong>
            <code>t = P&middot;n</code> is the force per unit area that the material on the
-           positive side exerts on the material on the negative side across that plane. Rotate
-           the normal and notice how a purely axial stress produces both a normal and a
-           shear component of <code>t</code> on an inclined plane &mdash; this is exactly why
+           positive side exerts on the material on the negative side across that plane.
+           When you hover, <code>t</code> (green) is drawn together with its
+           <em>decomposition</em> into the <strong>normal</strong> component
+           <code>t<sub>n</sub> = (t&middot;n) n</code> (blue) and the <strong>shear</strong>
+           component <code>t<sub>s</sub> = t &minus; t<sub>n</sub></code> (orange) relative to the
+           plane. Rotate the normal and notice how a purely axial stress produces both a
+           normal and a shear component on an inclined plane &mdash; this is exactly why
            stress is a tensor and not a scalar.</p>
     </div>
 
@@ -117,12 +123,11 @@
             }
 
             // First Piola-Kirchhoff stress tensor in 2D (uniaxial model).
+            // Only the axial component is nonzero; lateral surfaces are stress-free.
+            // Poisson's ratio affects deformation only, not the stress tensor.
             stressTensor() {
-                const { sigma, nu } = this.getDeformation();
-                // P = [[sigma, 0], [sigma*nu, 0]] keeps lateral faces traction-free
-                // in a 1D model (the transverse row is the lateral stress). We display
-                // the symmetric axial interpretation: diag(sigma, sigma*nu).
-                return [[sigma, 0], [sigma * nu, 0]];
+                const { sigma } = this.getDeformation();
+                return [[sigma, 0], [0, 0]];
             }
 
             // We don't animate time-stepping physics; the bar is a static equilibrium
@@ -283,22 +288,28 @@
                 ctx.strokeStyle = "#1b6ca8";
                 ctx.fillStyle = "#1b6ca8";
                 ctx.lineWidth = 2;
-                const nlen = 40;
+                const nlen = 44;
                 const nx2 = pxC.x + n[0] * nlen;
                 const ny2 = pxC.y + n[1] * nlen;
+                this._arrow(ctx, pxC.x, pxC.y, nx2, ny2, 8);
+                ctx.font = "italic 14px ui-monospace, Menlo, Consolas, monospace";
+                ctx.fillText("n", nx2 + 6, ny2 + 4);
+                ctx.restore();
+            }
+
+            // Draw an arrow from (x1,y1) to (x2,y2). Assumes fillStyle/strokeStyle set by caller.
+            _arrow(ctx, x1, y1, x2, y2, head) {
                 ctx.beginPath();
-                ctx.moveTo(pxC.x, pxC.y);
-                ctx.lineTo(nx2, ny2);
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
                 ctx.stroke();
-                const ang = Math.atan2(n[1], n[0]);
-                const ah = 8;
+                const ang = Math.atan2(y2 - y1, x2 - x1);
                 ctx.beginPath();
-                ctx.moveTo(nx2, ny2);
-                ctx.lineTo(nx2 - ah * Math.cos(ang - 0.4), ny2 - ah * Math.sin(ang - 0.4));
-                ctx.lineTo(nx2 - ah * Math.cos(ang + 0.4), ny2 - ah * Math.sin(ang + 0.4));
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 - head * Math.cos(ang - 0.4), y2 - head * Math.sin(ang - 0.4));
+                ctx.lineTo(x2 - head * Math.cos(ang + 0.4), y2 - head * Math.sin(ang + 0.4));
                 ctx.closePath();
                 ctx.fill();
-                ctx.restore();
             }
 
             _drawHover(ctx, P, n, curL, curH) {
@@ -308,27 +319,55 @@
                 const py = c.y + this.hoverWorld.wy * s;
                 const t = Mat2.mulVec(P, n);
 
-                // traction vector at the hover point
+                // visual scale: map traction magnitude to pixels.
+                // Use a reference of 1 MPa -> 80 px so typical values are clearly visible.
+                const vlen = 80 / 1e6;
+
+                // full traction vector (green)
+                const ex = px + t[0] * vlen;
+                const ey = py + t[1] * vlen;
                 ctx.save();
                 ctx.strokeStyle = "#27ae60";
                 ctx.fillStyle = "#27ae60";
                 ctx.lineWidth = 3;
-                const vlen = 0.000000004; // world->px scale for traction (visual)
-                const ex = px + t[0] * vlen * s;
-                const ey = py + t[1] * vlen * s;
-                ctx.beginPath();
-                ctx.moveTo(px, py);
-                ctx.lineTo(ex, ey);
-                ctx.stroke();
-                const ang = Math.atan2(ey - py, ex - px);
-                const ah = 10;
-                ctx.beginPath();
-                ctx.moveTo(ex, ey);
-                ctx.lineTo(ex - ah * Math.cos(ang - 0.4), ey - ah * Math.sin(ang - 0.4));
-                ctx.lineTo(ex - ah * Math.cos(ang + 0.4), ey - ah * Math.sin(ang + 0.4));
-                ctx.closePath();
-                ctx.fill();
+                this._arrow(ctx, px, py, ex, ey, 11);
+                ctx.font = "italic 15px ui-monospace, Menlo, Consolas, monospace";
+                ctx.fillText("t", ex + 6, ey + 4);
                 ctx.restore();
+
+                // decomposition relative to the plane: t_n = (t.n) n, t_s = t - t_n
+                const tnScalar = t[0] * n[0] + t[1] * n[1];
+                const tnx = tnScalar * n[0];
+                const tny = tnScalar * n[1];
+                const tsx = t[0] - tnx;
+                const tsy = t[1] - tny;
+                const enx = px + tnx * vlen;
+                const eny = py + tny * vlen;
+                const esx = px + tsx * vlen;
+                const esy = py + tsy * vlen;
+
+                // normal component (blue)
+                if (Math.hypot(tnx, tny) > 1) {
+                    ctx.save();
+                    ctx.strokeStyle = "#1b6ca8";
+                    ctx.fillStyle = "#1b6ca8";
+                    ctx.lineWidth = 2;
+                    this._arrow(ctx, px, py, enx, eny, 8);
+                    ctx.font = "italic 13px ui-monospace, Menlo, Consolas, monospace";
+                    ctx.fillText("t_n", enx - 18, eny - 6);
+                    ctx.restore();
+                }
+                // shear component (orange)
+                if (Math.hypot(tsx, tsy) > 1) {
+                    ctx.save();
+                    ctx.strokeStyle = "#e67e22";
+                    ctx.fillStyle = "#e67e22";
+                    ctx.lineWidth = 2;
+                    this._arrow(ctx, px, py, esx, esy, 8);
+                    ctx.font = "italic 13px ui-monospace, Menlo, Consolas, monospace";
+                    ctx.fillText("t_s", esx + 6, esy + 4);
+                    ctx.restore();
+                }
             }
 
             _drawTensorPanel(ctx, P, n, sigma) {
@@ -340,6 +379,11 @@
                 };
                 const nAngDeg = numOr("normalAngle", 0);
 
+                // decomposition magnitudes
+                const tn = t[0] * n[0] + t[1] * n[1];           // normal (signed)
+                const tnAbs = Math.abs(tn);
+                const tsMag = Math.hypot(t[0] - tn * n[0], t[1] - tn * n[1]); // shear magnitude
+
                 const lines = [
                     "Stress tensor P (GPa):",
                     `  [ ${fmt(P[0][0])}  ${fmt(P[0][1])} ]`,
@@ -347,7 +391,9 @@
                     "",
                     `normal n = (${n[0].toFixed(3)}, ${n[1].toFixed(3)})  (${nAngDeg}°)`,
                     `traction t = P·n = (${inGPa(t[0])}, ${inGPa(t[1])}) GPa`,
-                    `  |t| = ${inGPa(Math.hypot(t[0], t[1]))} GPa`
+                    `  |t|   = ${inGPa(Math.hypot(t[0], t[1]))} GPa`,
+                    `  |t_n| = ${inGPa(tnAbs)} GPa  (normal)`,
+                    `  |t_s| = ${inGPa(tsMag)} GPa  (shear)`
                 ];
 
                 ctx.save();
