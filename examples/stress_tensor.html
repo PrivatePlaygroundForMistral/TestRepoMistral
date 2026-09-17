@@ -9,7 +9,7 @@
 </head>
 <body class="example">
     <div class="back"><a href="../index.html">&larr; back to examples</a></div>
-    <h1>Stress Tensor &mdash; Iron Bar under Axial Load</h1>
+    <h1>Stress Tensor &mdash; Iron Bar (Stress Wave)</h1>
 
     <div class="sim">
         <div class="canvas-wrap">
@@ -21,122 +21,182 @@
             <table>
                 <tr><td>Current time</td><td><input id="currentTime" value="0.00 s" disabled></td></tr>
                 <tr><td>Time per sim. step</td><td><input id="stepTime" value="0.00 ms" disabled></td></tr>
-                <tr><td>Applied force (N)</td><td><input id="force" type="number" step="100" value="0"></td></tr>
-                <tr><td>Force location</td>
-                    <td><select id="forceSide">
-                        <option value="left">left end (positive force &rarr; compression)</option>
-                        <option value="right" selected>right end (positive force &rarr; tension)</option>
-                    </select></td></tr>
+                <tr><td>Max |&sigma;|</td><td><input id="maxStress" value="0.00 MPa" disabled></td></tr>
+                <tr><td>Force right (N)</td><td><input id="forceRight" type="number" step="100" value="10000"></td></tr>
+                <tr><td>Force left (N)</td><td><input id="forceLeft" type="number" step="100" value="0"></td></tr>
+                <tr><td>Hold left end fixed</td><td><input id="fixLeft" type="checkbox" checked></td></tr>
                 <tr><td>Young's modulus k (GPa)</td><td><input id="youngs" type="number" step="1" value="200"></td></tr>
                 <tr><td>Poisson ratio &nu;</td><td><input id="poisson" type="number" step="0.01" min="0" max="0.49" value="0.27"></td></tr>
+                <tr><td>Density &rho; (kg/m&sup3;)</td><td><input id="density" type="number" step="100" value="7870"></td></tr>
                 <tr><td>Bar length L (m)</td><td><input id="length" type="number" step="0.1" value="2.0"></td></tr>
                 <tr><td>Bar cross-section A (m&sup2;)</td><td><input id="area" type="number" step="0.001" value="0.01"></td></tr>
                 <tr><td>Plane normal angle (deg)</td><td><input id="normalAngle" type="number" step="1" value="0"></td></tr>
-                <tr><td>Show principal stress &sigma;</td><td><input id="showSigma" type="checkbox" checked></td></tr>
+                <tr><td>Slow motion (wave)</td><td><input id="slowMo" type="checkbox" checked></td></tr>
             </table>
             <button id="reset">Reset</button>
             <button id="pause">Pause</button>
-            <p style="font-size:0.85em;color:#666;margin-top:0.5rem">Hover the bar to sample the stress tensor and traction at the cursor.</p>
+            <p style="font-size:0.85em;color:#666;margin-top:0.5rem">Apply a force and watch the stress (color) travel through the bar. Hover the bar to sample the stress tensor and traction t = P&middot;n.</p>
         </div>
     </div>
 
     <div class="description">
-        <p>This example illustrates the <strong>stress tensor</strong> and the
-           <strong>Cauchy stress theorem</strong> <code>t = P&middot;n</code> on a
-           2D iron bar under an axial load. The bar uses a simple uniaxial-stress
-           model (linear elasticity with a Poisson-driven lateral contraction), so the
-           only nonzero stress component is the axial one &sigma; = F / A.</p>
+        <p>This example models the iron bar as a 1D elastic rod and solves the
+           <strong>wave equation</strong> <code>&rho; &uuml; = E u&prime;&prime;</code> so that a
+           suddenly applied force launches a <strong>stress wave</strong> that travels at the
+           longitudinal wave speed <code>c = &radic;(E/&rho;)</code>. The bar is colored by the
+           local axial stress &sigma; = E&middot;&epsilon;: <span style="color:#c0392b">red</span>
+           for tension, <span style="color:#2980b9">blue</span> for compression, white for zero.</p>
 
-        <p>The first Piola-Kirchhoff stress tensor here is the diagonal matrix
-           <code>P = diag(&sigma;, 0)</code>: only the axial component is nonzero, since the
-           lateral surfaces are stress-free. The Poisson ratio affects only the
-           <em>deformation</em> (the visible lateral contraction), not the stress. The bar is
-           drawn with its reference outline (dashed) and deformed outline so the Poisson
-           contraction is visible.</p>
+        <p>Apply a force on the right end (with the left end held fixed) and in
+           <strong>Slow motion</strong> you can watch the red tension travel from the right end
+           through the bar until the whole bar reaches the uniform equilibrium stress
+           &sigma; = F/A. You can apply forces on <em>both</em> ends at the same time (uncheck
+           &ldquo;Hold left end fixed&rdquo; to pull the left end too); balanced outward forces
+           settle to uniform tension, with waves entering from both ends.</p>
 
-        <p>You configure a <strong>plane normal</strong> <code>n</code> by its angle. The
-           dashed line is the plane itself (perpendicular to <code>n</code>); the region on the
-           positive side of the plane is tinted. The <strong>traction</strong>
-           <code>t = P&middot;n</code> is the force per unit area that the material on the
-           positive side exerts on the material on the negative side across that plane.
-           When you hover, <code>t</code> (green) is drawn together with its
-           <em>decomposition</em> into the <strong>normal</strong> component
-           <code>t<sub>n</sub> = (t&middot;n) n</code> (blue) and the <strong>shear</strong>
-           component <code>t<sub>s</sub> = t &minus; t<sub>n</sub></code> (orange) relative to the
-           plane. Rotate the normal and notice how a purely axial stress produces both a
-           normal and a shear component on an inclined plane &mdash; this is exactly why
-           stress is a tensor and not a scalar.</p>
+        <p>The first Piola-Kirchhoff stress tensor at a point is
+           <code>P = diag(&sigma;, 0)</code> (uniaxial; lateral surfaces are stress-free).
+           Hovering samples the local &sigma; and shows the <strong>traction</strong>
+           <code>t = P&middot;n</code> (green) decomposed into its <strong>normal</strong>
+           component <code>t<sub>n</sub> = (t&middot;n) n</code> (blue) and <strong>shear</strong>
+           component <code>t<sub>s</sub> = t &minus; t<sub>n</sub></code> (orange) on the plane
+           whose normal <code>n</code> you configure. When the cursor leaves the bar, the last
+           sampled point is kept. Rotate the normal and notice how a purely axial stress
+           produces both normal and shear traction on an inclined plane &mdash; why stress is a
+           tensor, not a scalar.</p>
     </div>
 
     <script>
         "use strict";
 
-        // ---- 2D matrix helpers on plain number arrays [[a,b],[c,d]] ----
         const Mat2 = {
             mulVec(m, v) { return [m[0][0] * v[0] + m[0][1] * v[1], m[1][0] * v[0] + m[1][1] * v[1]]; }
         };
 
+        // Diverging color map: white at 0, red at +1, blue at -1. t clamped to [-1,1].
+        function stressColor(t) {
+            t = Math.max(-1, Math.min(1, t));
+            let r, g, b;
+            if (t >= 0) {
+                r = 255; g = Math.round(255 * (1 - t)); b = Math.round(255 * (1 - t));
+            } else {
+                r = Math.round(255 * (1 + t)); g = Math.round(255 * (1 + t)); b = 255;
+            }
+            return `rgb(${r},${g},${b})`;
+        }
+
         class StressBar extends Simulation {
             constructor(canvas) {
                 super(canvas);
-                // world (metres) -> pixels scale, fit to canvas with margin
-                this.scale = 0;
-                this.mouse = null;          // {wx, wy} in metres or null
+                this.N = 120;                 // number of nodes
+                this.u = null;                 // displacement per node (m)
+                this.v = null;                 // velocity per node (m/s)
+                this.sigma = null;             // per-segment stress (Pa), length N-1
+                this.mouse = null;
+                this.hoverWorld = null;        // last sampled point over the bar (kept on leave)
+                this.maxAbsSigma = 0;          // for color autoscale
                 this.init();
                 this.render(this.ctx);
 
                 canvas.addEventListener("mousemove", (e) => this._onMove(e));
-                canvas.addEventListener("mouseleave", () => { this.mouse = null; });
+                // Note: do NOT clear hoverWorld on mouseleave -> keep last position.
             }
 
             init() {
-                const L = numOr("length", 2.0);
-                const H = 0.4; // bar thickness in metres (visual)
+                const L = Math.max(1e-6, numOr("length", 2.0));
                 this.length0 = L;
-                this.height0 = H;
-                // fit: leave margin for force arrows
-                const margin = 80;
-                this.scale = Math.min((this.width - 2 * margin) / L, (this.height - 2 * margin) / (H * 6));
+                this.height0 = 0.4;            // visual thickness (m)
+                this.dx = L / this.N;
+                const margin = 90;
+                this.scale = Math.min((this.width - 2 * margin) / L, (this.height - 2 * margin) / (this.height0 * 6));
                 this.centerPx = { x: this.width / 2, y: this.height / 2 };
+
+                this.u = new Array(this.N).fill(0);
+                this.v = new Array(this.N).fill(0);
+                this.sigma = new Array(this.N - 1).fill(0);
+                this.maxAbsSigma = 0;
+                this.hoverWorld = { wx: 0, wy: 0 };  // default to center until the user hovers
             }
 
-            // ---- physics ----
-            // Compute current deformed half-length and half-height from the load.
-            getDeformation() {
-                const F = numOr("force", 0);
-                const side = document.getElementById("forceSide").value;
-                // signed force pulling along +x on the right end / -x on left.
-                // Positive "force" => tension when applied on right end, compression on left.
-                let Faxial = (side === "right") ? F : -F;
-                const k = Math.max(1e-6, numOr("youngs", 200)) * 1e9; // GPa -> Pa
+            // ---- material / derived parameters ----
+            _params() {
+                const E = Math.max(1e6, numOr("youngs", 200)) * 1e9;  // Pa
                 const nu = Math.max(0, Math.min(0.49, numOr("poisson", 0.27)));
+                const rho = Math.max(1, numOr("density", 7870));
                 const A = Math.max(1e-9, numOr("area", 0.01));
                 const L = Math.max(1e-6, this.length0);
-
-                const sigma = Faxial / A;                 // axial stress (Pa)
-                const eps = sigma / k;                    // axial strain (small)
-                const epsLat = -nu * eps;                  // lateral strain (contraction)
-
-                const curL = L * (1 + eps);
-                const curH = this.height0 * (1 + epsLat);
-                return { sigma, nu, L, curL, curH, eps, epsLat };
+                const dx = this.dx;
+                const m = rho * A * dx;                  // node mass
+                const k = E * A / dx;                    // spring stiffness between nodes
+                const c = Math.sqrt(E / rho);            // wave speed
+                return { E, nu, rho, A, L, dx, m, k, c };
             }
 
-            // First Piola-Kirchhoff stress tensor in 2D (uniaxial model).
-            // Only the axial component is nonzero; lateral surfaces are stress-free.
-            // Poisson's ratio affects deformation only, not the stress tensor.
-            stressTensor() {
-                const { sigma } = this.getDeformation();
-                return [[sigma, 0], [0, 0]];
+            // Advance the wave equation by physical time `simDt`, sub-stepping for CFL.
+            _advance(simDt) {
+                const p = this._params();
+                const N = this.N, u = this.u, v = this.v;
+                const fixLeft = document.getElementById("fixLeft").checked;
+                const Fright = numOr("forceRight", 0);
+                const Fleft = numOr("forceLeft", 0);
+                const dt = 0.4 * p.dx / p.c;           // CFL-stable sub-step
+                const damp = 100;                       // velocity damping (1/s) -> settles to F/A without ringing
+                const steps = Math.max(1, Math.min(4000, Math.ceil(simDt / dt)));
+                const h = simDt / steps;
+                for (let s = 0; s < steps; s++) {
+                    const a = new Array(N);
+                    for (let i = 0; i < N; i++) {
+                        let f = 0;
+                        if (i > 0) f += p.k * (u[i - 1] - u[i]);
+                        if (i < N - 1) f += p.k * (u[i + 1] - u[i]);
+                        if (i === 0 && !fixLeft) f += -Fleft;       // left end pulled leftwards by Fleft
+                        if (i === N - 1) f += Fright;               // right end pulled rightwards by Fright
+                        f -= damp * p.m * v[i];
+                        a[i] = f / p.m;
+                    }
+                    for (let i = 0; i < N; i++) {
+                        if (i === 0 && fixLeft) { v[i] = 0; u[i] = 0; continue; }
+                        v[i] += a[i] * h;
+                        u[i] += v[i] * h;
+                    }
+                }
+                this._computeStress();
             }
 
-            // We don't animate time-stepping physics; the bar is a static equilibrium
-            // view driven by the controls. Keep the loop only to redraw on hover.
+            // Compute per-segment stress sigma[i] = E*(u[i+1]-u[i])/dx  (Pa).
+            _computeStress() {
+                const p = this._params();
+                let mx = 0;
+                for (let i = 0; i < this.N - 1; i++) {
+                    const s = p.E * (this.u[i + 1] - this.u[i]) / p.dx;
+                    this.sigma[i] = s;
+                    if (Math.abs(s) > mx) mx = Math.abs(s);
+                }
+                this.maxAbsSigma = mx;
+            }
+
+            // Run enough sub-steps to settle to equilibrium (used when not in slow-mo).
+            _settle() {
+                this._advance(0.02);
+            }
+
+            // Local axial stress at world x (linear interp over segments). Pa.
+            _stressAt(wx) {
+                const p = this._params();
+                const x = wx + p.L / 2;          // 0..L
+                const idx = x / p.dx;
+                const i = Math.max(0, Math.min(this.N - 2, Math.floor(idx)));
+                const frac = idx - i;
+                return this.sigma[i] * (1 - frac) + this.sigma[i + 1] * frac;
+            }
+
             step(dt) {
-                const angle = numOr("normalAngle", 0) * Math.PI / 180;
-                this.nx = Math.cos(angle);
-                this.ny = Math.sin(angle);
-                this._readHover();
+                const slow = document.getElementById("slowMo").checked;
+                // Real wave c~5000 m/s crosses a 2 m bar in ~0.0004 s. Scale physical time so
+                // one traversal takes ~10 s of real time in slow-mo (visible propagation), or
+                // jump near-instantly to equilibrium when slow-mo is off.
+                const timeScale = slow ? 4.2e-5 : 0.02;
+                this._advance(dt * timeScale);
             }
 
             _onMove(e) {
@@ -150,16 +210,13 @@
             }
 
             _readHover() {
-                if (!this.mouse) { this.hoverWorld = null; return; }
+                if (!this.mouse) return;
                 const wx = (this.mouse.px - this.centerPx.x) / this.scale;
                 const wy = (this.mouse.py - this.centerPx.y) / this.scale;
-                const { curL, curH } = this.getDeformation();
-                // hit-test against deformed bar rectangle
-                if (Math.abs(wx) <= curL / 2 && Math.abs(wy) <= curH / 2) {
+                if (Math.abs(wx) <= this.length0 / 2 && Math.abs(wy) <= this.height0 / 2) {
                     this.hoverWorld = { wx, wy };
-                } else {
-                    this.hoverWorld = null;
                 }
+                // else: keep previous hoverWorld (do not reset to center)
             }
 
             // ---- rendering ----
@@ -167,100 +224,113 @@
                 ctx.fillStyle = "#ffffff";
                 ctx.fillRect(0, 0, this.width, this.height);
 
-                const { sigma, curL, curH, eps, epsLat } = this.getDeformation();
-                const P = this.stressTensor();
                 const angle = numOr("normalAngle", 0) * Math.PI / 180;
                 const n = [Math.cos(angle), Math.sin(angle)];
+                const sigmaH = this.hoverWorld ? this._stressAt(this.hoverWorld.wx) : 0;
+                const P = [[sigmaH, 0], [0, 0]];
 
-                this._drawBar(ctx, curL, curH);
-                this._drawForceArrows(ctx, curL, curH);
-                this._drawPlane(ctx, n, curL, curH);
-                this._drawTensorPanel(ctx, P, n, sigma);
-                if (this.hoverWorld) this._drawHover(ctx, P, n, curL, curH);
+                this._drawBar(ctx);
+                this._drawForceArrows(ctx);
+                this._drawPlane(ctx, n);
+                this._drawTensorPanel(ctx, P, n, sigmaH);
+                if (this.hoverWorld) this._drawHover(ctx, P, n);
+                this._updateStats();
             }
 
-            _drawBar(ctx, curL, curH) {
+            // Draw the bar colored segment-by-segment by local stress, with exaggerated displacement.
+            _drawBar(ctx) {
                 const s = this.scale;
                 const c = this.centerPx;
-                const refL = this.length0, refH = this.height0;
+                const p = this._params();
+                const N = this.N;
+                const dispScale = 200;     // exaggerate displacement so deformation is visible
+                const yTop = c.y - this.height0 / 2 * s;
+                const yBot = c.y + this.height0 / 2 * s;
+                const segW = p.dx * s;
 
                 // reference outline (dashed)
                 ctx.save();
                 ctx.strokeStyle = "#bbb";
                 ctx.setLineDash([4, 4]);
                 ctx.lineWidth = 1;
-                ctx.strokeRect(c.x - refL / 2 * s, c.y - refH / 2 * s, refL * s, refH * s);
+                ctx.strokeRect(c.x - p.L / 2 * s, yTop, p.L * s, this.height0 * s);
                 ctx.restore();
 
-                // deformed bar
-                ctx.save();
-                ctx.fillStyle = "rgba(120,130,150,0.25)";
-                ctx.strokeStyle = "#44506a";
-                ctx.lineWidth = 2;
-                const x = c.x - curL / 2 * s;
-                const y = c.y - curH / 2 * s;
-                ctx.fillRect(x, y, curL * s, curH * s);
-                ctx.strokeRect(x, y, curL * s, curH * s);
+                // color reference for autoscale: use the applied-force equilibrium stress
+                const sigRef = Math.max(Math.abs(numOr("forceRight", 0)), Math.abs(numOr("forceLeft", 0))) / p.A;
+                const scale = Math.max(sigRef, this.maxAbsSigma, 1);
 
-                // hatching to read as solid
-                ctx.strokeStyle = "rgba(60,70,90,0.25)";
-                ctx.lineWidth = 1;
-                for (let i = -curH / 2; i <= curH / 2; i += 0.05) {
-                    ctx.beginPath();
-                    ctx.moveTo(c.x - curL / 2 * s, c.y + i * s);
-                    ctx.lineTo(c.x + curL / 2 * s, c.y + i * s);
-                    ctx.stroke();
+                for (let i = 0; i < N - 1; i++) {
+                    const xL = c.x - p.L / 2 * s + (i * p.dx) * s + this.u[i] * s * dispScale;
+                    const t = this.sigma[i] / scale;
+                    ctx.fillStyle = stressColor(t);
+                    ctx.fillRect(xL, yTop, segW + 1, this.height0 * s);
                 }
+
+                // outline of deformed bar
+                ctx.save();
+                ctx.strokeStyle = "#44506a";
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                for (let i = 0; i < N; i++) {
+                    const x = c.x - p.L / 2 * s + (i * p.dx) * s + this.u[i] * s * dispScale;
+                    if (i === 0) ctx.moveTo(x, yTop); else ctx.lineTo(x, yTop);
+                }
+                for (let i = N - 1; i >= 0; i--) {
+                    const x = c.x - p.L / 2 * s + (i * p.dx) * s + this.u[i] * s * dispScale;
+                    ctx.lineTo(x, yBot);
+                }
+                ctx.closePath();
+                ctx.stroke();
                 ctx.restore();
             }
 
-            _drawForceArrows(ctx, curL, curH) {
+            _drawForceArrows(ctx) {
                 const s = this.scale;
                 const c = this.centerPx;
-                const F = numOr("force", 0);
-                const side = document.getElementById("forceSide").value;
-                if (F === 0) return;
-
-                // Arrow direction: applied force points along its sign. We draw it at the
-                // chosen end, pointing outward for tension, inward for compression.
-                const sign = (side === "right") ? 1 : -1;       // end location sign
-                const dir = Math.sign(F);                       // force direction in +x
-                const len = Math.min(70, 18 + Math.abs(F) / 1000 * 0.5);
-                const startX = c.x + sign * (curL / 2) * s;
-                const tipX = startX + dir * len;
-                ctx.save();
-                ctx.strokeStyle = "#c0392b";
-                ctx.fillStyle = "#c0392b";
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.moveTo(startX, c.y);
-                ctx.lineTo(tipX, c.y);
-                ctx.stroke();
-                // arrowhead
-                const ah = 8;
-                ctx.beginPath();
-                ctx.moveTo(tipX, c.y);
-                ctx.lineTo(tipX - dir * ah, c.y - ah / 2);
-                ctx.lineTo(tipX - dir * ah, c.y + ah / 2);
-                ctx.closePath();
-                ctx.fill();
-                ctx.restore();
+                const p = this._params();
+                const dispScale = 200;
+                const yMid = c.y;
+                const N = this.N;
+                const drawOne = (F, endSign) => {
+                    if (F === 0) return;
+                    const endX = c.x + endSign * (p.L / 2) * s
+                        + (endSign > 0 ? this.u[N - 1] : this.u[0]) * s * dispScale;
+                    const dir = endSign * Math.sign(F);   // pulls outward for positive F
+                    const len = Math.min(70, 18 + Math.abs(F) / 1000 * 0.5);
+                    const tipX = endX + dir * len;
+                    ctx.save();
+                    ctx.strokeStyle = "#c0392b";
+                    ctx.fillStyle = "#c0392b";
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(endX, yMid);
+                    ctx.lineTo(tipX, yMid);
+                    ctx.stroke();
+                    const ah = 9;
+                    ctx.beginPath();
+                    ctx.moveTo(tipX, yMid);
+                    ctx.lineTo(tipX - dir * ah, yMid - ah / 2);
+                    ctx.lineTo(tipX - dir * ah, yMid + ah / 2);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+                };
+                const Fright = numOr("forceRight", 0);
+                const Fleft = numOr("forceLeft", 0);
+                if (!document.getElementById("fixLeft").checked) drawOne(Fleft, -1);
+                drawOne(Fright, 1);
             }
 
-            // Draw the cutting plane (line perpendicular to n) through the hover point
-            // (or center), tint the positive side.
-            _drawPlane(ctx, n, curL, curH) {
+            // Draw the cutting plane through the sampled (last) hover point, tint positive side.
+            _drawPlane(ctx, n) {
                 const s = this.scale;
                 const c = this.centerPx;
                 const anchor = this.hoverWorld || { wx: 0, wy: 0 };
                 const pxC = { x: c.x + anchor.wx * s, y: c.y + anchor.wy * s };
-
-                // plane direction (perpendicular to n)
                 const d = [-n[1], n[0]];
-                // extend line across the whole canvas
                 const big = Math.max(this.width, this.height);
 
-                // tint positive side (half-plane n.(x-anchor) > 0)
                 ctx.save();
                 ctx.beginPath();
                 ctx.moveTo(pxC.x + n[0] * big + d[0] * big, pxC.y + n[1] * big + d[1] * big);
@@ -268,11 +338,10 @@
                 ctx.lineTo(pxC.x - n[0] * big - d[0] * big, pxC.y - n[1] * big - d[1] * big);
                 ctx.lineTo(pxC.x - n[0] * big + d[0] * big, pxC.y - n[1] * big + d[1] * big);
                 ctx.closePath();
-                ctx.fillStyle = "rgba(52,152,219,0.18)";
+                ctx.fillStyle = "rgba(52,152,219,0.14)";
                 ctx.fill();
                 ctx.restore();
 
-                // the plane line
                 ctx.save();
                 ctx.strokeStyle = "#2980b9";
                 ctx.lineWidth = 2;
@@ -283,27 +352,25 @@
                 ctx.stroke();
                 ctx.restore();
 
-                // normal vector arrow at the plane anchor
                 ctx.save();
                 ctx.strokeStyle = "#1b6ca8";
                 ctx.fillStyle = "#1b6ca8";
                 ctx.lineWidth = 2;
                 const nlen = 44;
-                const nx2 = pxC.x + n[0] * nlen;
-                const ny2 = pxC.y + n[1] * nlen;
-                this._arrow(ctx, pxC.x, pxC.y, nx2, ny2, 8);
+                this._arrow(ctx, pxC.x, pxC.y, pxC.x + n[0] * nlen, pxC.y + n[1] * nlen, 8);
                 ctx.font = "italic 14px ui-monospace, Menlo, Consolas, monospace";
-                ctx.fillText("n", nx2 + 6, ny2 + 4);
+                ctx.fillText("n", pxC.x + n[0] * nlen + 6, pxC.y + n[1] * nlen + 4);
                 ctx.restore();
             }
 
-            // Draw an arrow from (x1,y1) to (x2,y2). Assumes fillStyle/strokeStyle set by caller.
             _arrow(ctx, x1, y1, x2, y2, head) {
+                const dx = x2 - x1, dy = y2 - y1;
+                if (Math.hypot(dx, dy) < 1) return;
                 ctx.beginPath();
                 ctx.moveTo(x1, y1);
                 ctx.lineTo(x2, y2);
                 ctx.stroke();
-                const ang = Math.atan2(y2 - y1, x2 - x1);
+                const ang = Math.atan2(dy, dx);
                 ctx.beginPath();
                 ctx.moveTo(x2, y2);
                 ctx.lineTo(x2 - head * Math.cos(ang - 0.4), y2 - head * Math.sin(ang - 0.4));
@@ -312,102 +379,77 @@
                 ctx.fill();
             }
 
-            _drawHover(ctx, P, n, curL, curH) {
+            _drawHover(ctx, P, n) {
                 const s = this.scale;
                 const c = this.centerPx;
                 const px = c.x + this.hoverWorld.wx * s;
                 const py = c.y + this.hoverWorld.wy * s;
                 const t = Mat2.mulVec(P, n);
+                const vlen = 90 / 1e6;   // 90 px per MPa
 
-                // visual scale: map traction magnitude to pixels.
-                // Use a reference of 1 MPa -> 80 px so typical values are clearly visible.
-                const vlen = 80 / 1e6;
-
-                // full traction vector (green)
                 const ex = px + t[0] * vlen;
                 const ey = py + t[1] * vlen;
                 ctx.save();
                 ctx.strokeStyle = "#27ae60";
                 ctx.fillStyle = "#27ae60";
                 ctx.lineWidth = 3;
-                this._arrow(ctx, px, py, ex, ey, 11);
+                this._arrow(ctx, px, py, ex, ey, 12);
                 ctx.font = "italic 15px ui-monospace, Menlo, Consolas, monospace";
-                ctx.fillText("t", ex + 6, ey + 4);
+                ctx.fillText("t", ex + 8, ey + 5);
                 ctx.restore();
 
-                // decomposition relative to the plane: t_n = (t.n) n, t_s = t - t_n
                 const tnScalar = t[0] * n[0] + t[1] * n[1];
-                const tnx = tnScalar * n[0];
-                const tny = tnScalar * n[1];
-                const tsx = t[0] - tnx;
-                const tsy = t[1] - tny;
-                const enx = px + tnx * vlen;
-                const eny = py + tny * vlen;
-                const esx = px + tsx * vlen;
-                const esy = py + tsy * vlen;
+                const tnx = tnScalar * n[0], tny = tnScalar * n[1];
+                const tsx = t[0] - tnx, tsy = t[1] - tny;
+                const enx = px + tnx * vlen, eny = py + tny * vlen;
+                const esx = px + tsx * vlen, esy = py + tsy * vlen;
 
-                // normal component (blue)
-                if (Math.hypot(tnx, tny) > 1) {
+                if (Math.hypot(tnx, tny) * vlen > 3) {
                     ctx.save();
-                    ctx.strokeStyle = "#1b6ca8";
-                    ctx.fillStyle = "#1b6ca8";
-                    ctx.lineWidth = 2;
-                    this._arrow(ctx, px, py, enx, eny, 8);
+                    ctx.strokeStyle = "#1b6ca8"; ctx.fillStyle = "#1b6ca8"; ctx.lineWidth = 2;
+                    this._arrow(ctx, px, py, enx, eny, 9);
                     ctx.font = "italic 13px ui-monospace, Menlo, Consolas, monospace";
-                    ctx.fillText("t_n", enx - 18, eny - 6);
+                    ctx.fillText("t_n", enx - 22, eny - 6);
                     ctx.restore();
                 }
-                // shear component (orange)
-                if (Math.hypot(tsx, tsy) > 1) {
+                if (Math.hypot(tsx, tsy) * vlen > 3) {
                     ctx.save();
-                    ctx.strokeStyle = "#e67e22";
-                    ctx.fillStyle = "#e67e22";
-                    ctx.lineWidth = 2;
-                    this._arrow(ctx, px, py, esx, esy, 8);
+                    ctx.strokeStyle = "#e67e22"; ctx.fillStyle = "#e67e22"; ctx.lineWidth = 2;
+                    this._arrow(ctx, px, py, esx, esy, 9);
                     ctx.font = "italic 13px ui-monospace, Menlo, Consolas, monospace";
-                    ctx.fillText("t_s", esx + 6, esy + 4);
+                    ctx.fillText("t_s", esx + 8, esy + 5);
                     ctx.restore();
                 }
             }
 
-            _drawTensorPanel(ctx, P, n, sigma) {
+            _drawTensorPanel(ctx, P, n, sigmaH) {
                 const t = Mat2.mulVec(P, n);
-                const inGPa = (v) => (v / 1e9).toExponential(3);
-                const fmt = (v) => {
-                    if (Math.abs(v) < 1e6) return "0";
-                    return inGPa(v) + " GPa";
-                };
+                const inMPa = (v) => (v / 1e6).toFixed(3);
+                const fmt = (v) => (Math.abs(v) < 1e3 ? "0" : inMPa(v) + " MPa");
                 const nAngDeg = numOr("normalAngle", 0);
-
-                // decomposition magnitudes
-                const tn = t[0] * n[0] + t[1] * n[1];           // normal (signed)
-                const tnAbs = Math.abs(tn);
-                const tsMag = Math.hypot(t[0] - tn * n[0], t[1] - tn * n[1]); // shear magnitude
+                const tn = t[0] * n[0] + t[1] * n[1];
+                const tsMag = Math.hypot(t[0] - tn * n[0], t[1] - tn * n[1]);
 
                 const lines = [
-                    "Stress tensor P (GPa):",
+                    "Stress tensor P (MPa):",
                     `  [ ${fmt(P[0][0])}  ${fmt(P[0][1])} ]`,
                     `  [ ${fmt(P[1][0])}  ${fmt(P[1][1])} ]`,
                     "",
+                    `sample &sigma; = ${fmt(sigmaH)}`,
                     `normal n = (${n[0].toFixed(3)}, ${n[1].toFixed(3)})  (${nAngDeg}°)`,
-                    `traction t = P·n = (${inGPa(t[0])}, ${inGPa(t[1])}) GPa`,
-                    `  |t|   = ${inGPa(Math.hypot(t[0], t[1]))} GPa`,
-                    `  |t_n| = ${inGPa(tnAbs)} GPa  (normal)`,
-                    `  |t_s| = ${inGPa(tsMag)} GPa  (shear)`
+                    `traction t = P·n = (${inMPa(t[0])}, ${inMPa(t[1])}) MPa`,
+                    `  |t_n| = ${inMPa(Math.abs(tn))} MPa  (normal)`,
+                    `  |t_s| = ${inMPa(tsMag)} MPa  (shear)`
                 ];
 
                 ctx.save();
                 ctx.font = "13px ui-monospace, Menlo, Consolas, monospace";
-                const pad = 8;
-                const lineH = 16;
-                const w = 290;
+                const pad = 8, lineH = 16, w = 300;
                 const h = lines.length * lineH + pad * 2;
                 const x = 12, y = 12;
                 ctx.fillStyle = "rgba(255,255,255,0.92)";
-                ctx.strokeStyle = "#d0d0d8";
-                ctx.lineWidth = 1;
-                ctx.fillRect(x, y, w, h);
-                ctx.strokeRect(x, y, w, h);
+                ctx.strokeStyle = "#d0d0d8"; ctx.lineWidth = 1;
+                ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h);
                 ctx.fillStyle = "#1a1a1a";
                 lines.forEach((ln, i) => ctx.fillText(ln, x + pad, y + pad + (i + 1) * lineH - 3));
                 ctx.restore();
@@ -416,8 +458,10 @@
             _updateStats() {
                 const ct = document.getElementById("currentTime");
                 const st = document.getElementById("stepTime");
-                if (ct) ct.value = this.time.toFixed(2) + " s";
+                const ms = document.getElementById("maxStress");
+                if (ct) ct.value = this.time.toFixed(3) + " s";
                 if (st) st.value = this.stepTime.toFixed(2) + " ms";
+                if (ms) ms.value = (this.maxAbsSigma / 1e6).toFixed(3) + " MPa";
             }
         }
 
@@ -431,10 +475,35 @@
         });
         document.getElementById("reset").addEventListener("click", () => sim.reset());
 
-        // redraw whenever a control changes (the bar is equilibrium-driven)
-        document.querySelectorAll("#force,#forceSide,#youngs,#poisson,#length,#area,#normalAngle")
-            .forEach(el => el.addEventListener("input", () => sim.render(sim.ctx)));
+        // Force / boundary changes drive the wave behavior:
+        //  - Slow-mo ON: reset the bar to rest (keep the new force live) so the step front
+        //    propagates as a fresh wave from the loaded end(s) toward equilibrium.
+        //  - Slow-mo OFF: jump straight to the static equilibrium.
+        // Material/geometry/plane changes only re-render or re-settle without a fresh wave.
+        const waveControls = "#forceRight,#forceLeft,#fixLeft";
+        const settleControls = "#youngs,#poisson,#density,#length,#area,#normalAngle,#slowMo";
+        document.querySelectorAll(waveControls)
+            .forEach(el => el.addEventListener("input", () => {
+                if (document.getElementById("slowMo").checked) {
+                    sim.init();          // rest state; force stays applied -> wave launches
+                } else {
+                    sim.init();
+                    sim._settle();
+                }
+                sim.render(sim.ctx);
+            }));
+        document.querySelectorAll(settleControls)
+            .forEach(el => el.addEventListener("input", () => {
+                if (!document.getElementById("slowMo").checked) {
+                    sim.init();
+                    sim._settle();
+                }
+                sim.render(sim.ctx);
+            }));
 
+        // Start at static equilibrium. Toggle Slow motion on, then change a force to launch a wave.
+        sim._settle();
+        sim.render(sim.ctx);
         sim.start();
         pauseBtn.textContent = "Pause";
     </script>
