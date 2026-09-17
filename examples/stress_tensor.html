@@ -21,7 +21,7 @@
             <table>
                 <tr><td>Current time</td><td><input id="currentTime" value="0.00 s" disabled></td></tr>
                 <tr><td>Time per sim. step</td><td><input id="stepTime" value="0.00 ms" disabled></td></tr>
-                <tr><td>Applied force (N)</td><td><input id="force" type="number" step="100" value="0"></td></tr>
+                <tr><td>Applied force (N)</td><td><input id="force" type="number" step="100" value="10000"></td></tr>
                 <tr><td>Force location</td>
                     <td><select id="forceSide">
                         <option value="left">left end (positive force &rarr; compression)</option>
@@ -33,6 +33,7 @@
                 <tr><td>Bar cross-section A (m&sup2;)</td><td><input id="area" type="number" step="0.001" value="0.01"></td></tr>
                 <tr><td>Plane normal angle (deg)</td><td><input id="normalAngle" type="number" step="1" value="0"></td></tr>
                 <tr><td>Show principal stress &sigma;</td><td><input id="showSigma" type="checkbox" checked></td></tr>
+                <tr><td>Slow motion</td><td><input id="slowMo" type="checkbox" checked></td></tr>
             </table>
             <button id="reset">Reset</button>
             <button id="pause">Pause</button>
@@ -66,6 +67,11 @@
            plane. Rotate the normal and notice how a purely axial stress produces both a
            normal and a shear component on an inclined plane &mdash; this is exactly why
            stress is a tensor and not a scalar.</p>
+
+        <p>Enable <strong>Slow motion</strong> to watch the traction and its
+           decomposition grow from zero to their full length over about a second each
+           time you move the cursor, making the build-up of the normal and shear
+           components easy to follow.</p>
     </div>
 
     <script>
@@ -82,6 +88,7 @@
                 // world (metres) -> pixels scale, fit to canvas with margin
                 this.scale = 0;
                 this.mouse = null;          // {wx, wy} in metres or null
+                this.slowProgress = 0;      // 0..1 animation of traction vectors
                 this.init();
                 this.render(this.ctx);
 
@@ -130,21 +137,28 @@
                 return [[sigma, 0], [0, 0]];
             }
 
-            // We don't animate time-stepping physics; the bar is a static equilibrium
-            // view driven by the controls. Keep the loop only to redraw on hover.
+            // The bar is a static equilibrium view driven by the controls. The loop is
+            // used only to animate the slow-motion traction build-up when hovering.
             step(dt) {
-                const angle = numOr("normalAngle", 0) * Math.PI / 180;
-                this.nx = Math.cos(angle);
-                this.ny = Math.sin(angle);
                 this._readHover();
+                const slow = document.getElementById("slowMo").checked;
+                if (slow && this.hoverWorld) {
+                    // grow the vectors over ~1.2s, then hold
+                    this.slowProgress = Math.min(1, this.slowProgress + dt / 1.2);
+                } else {
+                    this.slowProgress = slow ? 0 : 1;
+                }
             }
 
             _onMove(e) {
                 const rect = this.canvas.getBoundingClientRect();
-                this.mouse = {
-                    px: (e.clientX - rect.left) * (this.canvas.width / rect.width),
-                    py: (e.clientY - rect.top) * (this.canvas.height / rect.height)
-                };
+                const px = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+                const py = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+                // restart slow-motion animation when the hover point moves notably
+                if (!this.mouse || Math.hypot(px - this.mouse.px, py - this.mouse.py) > 4) {
+                    this.slowProgress = 0;
+                }
+                this.mouse = { px, py };
                 this._readHover();
                 if (!this.running) this.render(this.ctx);
             }
@@ -297,13 +311,17 @@
                 ctx.restore();
             }
 
-            // Draw an arrow from (x1,y1) to (x2,y2). Assumes fillStyle/strokeStyle set by caller.
+            // Draw an arrow from (x1,y1) to (x2,y2) with a solid arrowhead.
+            // Assumes strokeStyle/fillStyle/lineWidth set by the caller.
             _arrow(ctx, x1, y1, x2, y2, head) {
+                const dx = x2 - x1, dy = y2 - y1;
+                const len = Math.hypot(dx, dy);
+                if (len < 1) return; // nothing to draw for a near-zero vector
                 ctx.beginPath();
                 ctx.moveTo(x1, y1);
                 ctx.lineTo(x2, y2);
                 ctx.stroke();
-                const ang = Math.atan2(y2 - y1, x2 - x1);
+                const ang = Math.atan2(dy, dx);
                 ctx.beginPath();
                 ctx.moveTo(x2, y2);
                 ctx.lineTo(x2 - head * Math.cos(ang - 0.4), y2 - head * Math.sin(ang - 0.4));
@@ -320,19 +338,21 @@
                 const t = Mat2.mulVec(P, n);
 
                 // visual scale: map traction magnitude to pixels.
-                // Use a reference of 1 MPa -> 80 px so typical values are clearly visible.
-                const vlen = 80 / 1e6;
+                // Reference: 1 MPa -> 90 px so typical values are clearly visible.
+                const vlen = 90 / 1e6;
+                // slow-motion build-up factor (0..1); 1 when slow-mo is off.
+                const grow = this.slowProgress;
 
                 // full traction vector (green)
-                const ex = px + t[0] * vlen;
-                const ey = py + t[1] * vlen;
+                const ex = px + t[0] * vlen * grow;
+                const ey = py + t[1] * vlen * grow;
                 ctx.save();
                 ctx.strokeStyle = "#27ae60";
                 ctx.fillStyle = "#27ae60";
                 ctx.lineWidth = 3;
-                this._arrow(ctx, px, py, ex, ey, 11);
+                this._arrow(ctx, px, py, ex, ey, 12);
                 ctx.font = "italic 15px ui-monospace, Menlo, Consolas, monospace";
-                ctx.fillText("t", ex + 6, ey + 4);
+                ctx.fillText("t", ex + 8, ey + 5);
                 ctx.restore();
 
                 // decomposition relative to the plane: t_n = (t.n) n, t_s = t - t_n
@@ -341,31 +361,31 @@
                 const tny = tnScalar * n[1];
                 const tsx = t[0] - tnx;
                 const tsy = t[1] - tny;
-                const enx = px + tnx * vlen;
-                const eny = py + tny * vlen;
-                const esx = px + tsx * vlen;
-                const esy = py + tsy * vlen;
+                const enx = px + tnx * vlen * grow;
+                const eny = py + tny * vlen * grow;
+                const esx = px + tsx * vlen * grow;
+                const esy = py + tsy * vlen * grow;
 
                 // normal component (blue)
-                if (Math.hypot(tnx, tny) > 1) {
+                if (Math.hypot(tnx, tny) * vlen * grow > 3) {
                     ctx.save();
                     ctx.strokeStyle = "#1b6ca8";
                     ctx.fillStyle = "#1b6ca8";
                     ctx.lineWidth = 2;
-                    this._arrow(ctx, px, py, enx, eny, 8);
+                    this._arrow(ctx, px, py, enx, eny, 9);
                     ctx.font = "italic 13px ui-monospace, Menlo, Consolas, monospace";
-                    ctx.fillText("t_n", enx - 18, eny - 6);
+                    ctx.fillText("t_n", enx - 22, eny - 6);
                     ctx.restore();
                 }
                 // shear component (orange)
-                if (Math.hypot(tsx, tsy) > 1) {
+                if (Math.hypot(tsx, tsy) * vlen * grow > 3) {
                     ctx.save();
                     ctx.strokeStyle = "#e67e22";
                     ctx.fillStyle = "#e67e22";
                     ctx.lineWidth = 2;
-                    this._arrow(ctx, px, py, esx, esy, 8);
+                    this._arrow(ctx, px, py, esx, esy, 9);
                     ctx.font = "italic 13px ui-monospace, Menlo, Consolas, monospace";
-                    ctx.fillText("t_s", esx + 6, esy + 4);
+                    ctx.fillText("t_s", esx + 8, esy + 5);
                     ctx.restore();
                 }
             }
@@ -431,9 +451,13 @@
         });
         document.getElementById("reset").addEventListener("click", () => sim.reset());
 
-        // redraw whenever a control changes (the bar is equilibrium-driven)
-        document.querySelectorAll("#force,#forceSide,#youngs,#poisson,#length,#area,#normalAngle")
-            .forEach(el => el.addEventListener("input", () => sim.render(sim.ctx)));
+        // redraw whenever a control changes (the bar is equilibrium-driven);
+        // changing a control also restarts the slow-motion animation.
+        document.querySelectorAll("#force,#forceSide,#youngs,#poisson,#length,#area,#normalAngle,#slowMo")
+            .forEach(el => el.addEventListener("input", () => {
+                sim.slowProgress = 0;
+                sim.render(sim.ctx);
+            }));
 
         sim.start();
         pauseBtn.textContent = "Pause";
