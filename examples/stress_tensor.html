@@ -18,6 +18,11 @@
 
         <div class="controls">
             <h3>Controls</h3>
+            <div class="btn-row">
+                <button id="start">Start</button>
+                <button id="pause" disabled>Pause</button>
+                <button id="reset">Reset</button>
+            </div>
             <table>
                 <tr><td>Current time</td><td><input id="currentTime" value="0.00 s" disabled></td></tr>
                 <tr><td>Time per sim. step</td><td><input id="stepTime" value="0.00 ms" disabled></td></tr>
@@ -32,12 +37,9 @@
                 <tr><td>Bar cross-section A (m&sup2;)</td><td><input id="area" type="number" step="0.001" value="0.01"></td></tr>
                 <tr><td>Plane normal angle (deg)</td><td><input id="normalAngle" type="number" step="1" value="0"></td></tr>
                 <tr><td>Slow motion (wave)</td><td><input id="slowMo" type="checkbox" checked></td></tr>
-                <tr><td>Time scale (slow-mo)</td><td><input id="timeScale" type="number" step="1e-6" value="4e-5"></td></tr>
+                <tr><td>Time scale (slow-mo)</td><td><input id="timeScale" type="number" step="1e-7" value="4e-7"></td></tr>
                 <tr><td>Damping (1/s)</td><td><input id="damping" type="number" step="100" value="3000"></td></tr>
             </table>
-            <button id="start">Start</button>
-            <button id="pause" disabled>Pause</button>
-            <button id="reset">Reset</button>
             <p style="font-size:0.85em;color:#666;margin-top:0.5rem">Configure the bar and forces, then press <strong>Start</strong> to launch the stress wave. Hover the bar to sample the stress tensor and traction t = P&middot;n. Lower damping &rarr; crisper wave but more bounces; higher damping &rarr; settles to F/A faster but a weaker front.</p>
         </div>
     </div>
@@ -503,6 +505,7 @@
             else { sim.start(); pauseBtn.textContent = "Pause"; }
         });
         document.getElementById("reset").addEventListener("click", () => {
+            sim.stop();
             sim.reset();
             setRunningUI(false);
         });
