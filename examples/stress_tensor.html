@@ -236,10 +236,12 @@
             _stressAt(wx) {
                 const p = this._params();
                 const x = wx + p.L / 2;          // 0..L
-                const idx = x / p.dx;
-                const i = Math.max(0, Math.min(this.N - 2, Math.floor(idx)));
+                const idx = Math.max(0, Math.min(this.N - 1, x / p.dx));
+                const i = Math.min(this.N - 2, Math.floor(idx));
                 const frac = idx - i;
-                return this.sigma[i] * (1 - frac) + this.sigma[i + 1] * frac;
+                const s0 = this.sigma[i];
+                const s1 = this.sigma[Math.min(this.N - 2, i + 1)];
+                return s0 * (1 - frac) + s1 * frac;
             }
 
             // Deformed pixel x for a material coordinate wx (reference frame), including
