@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Particle System (Explicit Euler)</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <script src="../js/sim.js"></script>
+</head>
+<body class="example">
+    <div class="back"><a href="../index.html">&larr; back to examples</a></div>
+    <h1>Particle System &mdash; Explicit Euler</h1>
+
+    <div class="sim">
+        <div class="canvas-wrap">
+            <canvas id="canvas" width="700" height="500">Your browser does not support the HTML5 canvas tag.</canvas>
+        </div>
+
+        <div class="controls">
+            <h3>Controls</h3>
+            <table>
+                <tr><td>Current time</td><td><input id="currentTime" value="0.00 s" disabled></td></tr>
+                <tr><td>Time per sim. step</td><td><input id="stepTime" value="0.00 ms" disabled></td></tr>
+                <tr><td># particles</td><td><input id="numParticles" value="0" disabled></td></tr>
+                <tr><td>Time step size</td><td><input id="timeStep" type="number" step="0.001" min="0.001" max="0.1" value="0.01"></td></tr>
+                <tr><td>Gravity</td><td><input id="gravity" type="number" step="0.1" value="9.81"></td></tr>
+                <tr><td>Emission rate (particles/s)</td><td><input id="emissionRate" type="number" step="1" min="0" value="200"></td></tr>
+                <tr><td>Life span (s)</td><td><input id="lifeSpan" type="number" step="0.1" min="0.1" value="3.0"></td></tr>
+                <tr><td>Initial speed</td><td><input id="initSpeed" type="number" step="0.1" value="80"></td></tr>
+            </table>
+            <button id="reset">Reset</button>
+            <button id="pause">Pause</button>
+        </div>
+    </div>
+
+    <div class="description">
+        <p>A particle generator continuously spawns particles at the bottom-center of the canvas,
+           shooting them upward with a random spread. Each particle is given a finite
+           <em>life span</em>; once it elapses the particle is removed from the simulation.</p>
+
+        <p>The motion of every particle is advanced by the
+           <strong>explicit (forward) Euler</strong> method, the simplest ODE integrator.
+           With state <code>x</code> (position) and <code>v</code> (velocity) and acceleration
+           <code>a</code> from gravity, one step is:</p>
+        <pre><code>x(t + dt) = x(t) + dt * v(t)
+v(t + dt) = v(t) + dt * a(t)</code></pre>
+        <p>Note that explicit Euler uses the <em>old</em> velocity to update the position,
+           which is why it is not symplectic and tends to inject energy &mdash; fine for a
+           short-lived particle effect, less ideal for long-running systems.</p>
+    </div>
+
+    <script>
+        "use strict";
+
+        class Particle {
+            constructor(x, y, vx, vy, life) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.life = life;     // remaining life in seconds
+                this.maxLife = life;  // original life, used for fade/color
+            }
+        }
+
+        class ParticleSystem extends Simulation {
+            constructor(canvas) {
+                super(canvas);
+                this.particles = [];
+                this.emitAcc = 0;     // fractional emission accumulator
+                this.init();
+                this.render(this.ctx);
+            }
+
+            init() {
+                this.particles = [];
+                this.emitAcc = 0;
+            }
+
+            // Emitter at bottom-center, pointing straight up with a random spread.
+            emitOne() {
+                const x = this.width / 2;
+                const y = this.height - 20;
+                const speed = numOr("initSpeed", 80);
+                const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI / 3; // +/- 30 deg
+                const vx = speed * Math.cos(angle);
+                const vy = speed * Math.sin(angle);
+                const life = numOr("lifeSpan", 3.0);
+                this.particles.push(new Particle(x, y, vx, vy, life));
+            }
+
+            step(dt) {
+                const g = numOr("gravity", 9.81);
+                const rate = numOr("emissionRate", 200);
+                this.dt = numOr("timeStep", 0.01);
+
+                // Spawn new particles using an accumulator so low frame rates
+                // still produce a roughly correct count per second.
+                this.emitAcc += rate * dt;
+                let n = Math.floor(this.emitAcc);
+                this.emitAcc -= n;
+                for (let i = 0; i < n; i++) this.emitOne();
+
+                // Explicit Euler integration + lifetime bookkeeping.
+                // Iterate backward so we can splice dead particles in place.
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    const p = this.particles[i];
+
+                    // acceleration: gravity pulls downward (+y is down on the canvas)
+                    const ax = 0;
+                    const ay = g * 60; // scaled to feel right in pixels/s units
+
+                    // x(t+dt) = x(t) + dt * v(t)   (uses OLD velocity)
+                    p.x += dt * p.vx;
+                    p.y += dt * p.vy;
+
+                    // v(t+dt) = v(t) + dt * a(t)
+                    p.vx += dt * ax;
+                    p.vy += dt * ay;
+
+                    p.life -= dt;
+
+                    // Remove when life expires or it leaves the canvas far below.
+                    if (p.life <= 0 || p.y > this.height + 40) {
+                        this.particles.splice(i, 1);
+                    }
+                }
+            }
+
+            render(ctx) {
+                // Clear with the canvas background.
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, 0, this.width, this.height);
+
+                // Emitter marker.
+                ctx.fillStyle = "#888";
+                ctx.fillRect(this.width / 2 - 6, this.height - 22, 12, 8);
+
+                for (const p of this.particles) {
+                    const t = p.life / p.maxLife; // 1 -> 0 as it dies
+                    // Fade from orange (young) to dark red (old).
+                    const r = 220;
+                    const gC = Math.floor(80 + 120 * t);
+                    const b = Math.floor(30 * t);
+                    const a = 0.2 + 0.8 * t; // also fade alpha near end of life
+                    ctx.fillStyle = `rgba(${r},${gC},${b},${a.toFixed(3)})`;
+                    const radius = 2 + 1.5 * t;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, radius, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            }
+
+            _updateStats() {
+                const ct = document.getElementById("currentTime");
+                const st = document.getElementById("stepTime");
+                const np = document.getElementById("numParticles");
+                if (ct) ct.value = this.time.toFixed(2) + " s";
+                if (st) st.value = this.stepTime.toFixed(2) + " ms";
+                if (np) np.value = this.particles.length;
+            }
+        }
+
+        const canvas = document.getElementById("canvas");
+        const sim = new ParticleSystem(canvas);
+
+        const pauseBtn = document.getElementById("pause");
+        pauseBtn.addEventListener("click", () => {
+            if (sim.running) {
+                sim.stop();
+                pauseBtn.textContent = "Resume";
+            } else {
+                sim.start();
+                pauseBtn.textContent = "Pause";
+            }
+        });
+
+        document.getElementById("reset").addEventListener("click", () => sim.reset());
+
+        sim.start();
+        pauseBtn.textContent = "Pause";
+    </script>
+</body>
+</html>
