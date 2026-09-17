@@ -1,0 +1,4 @@
+[build]
+  publish = "."
+
+# Headers / redirects can be added later if needed.
