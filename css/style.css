@@ -117,6 +117,12 @@ canvas {
     margin-top: 0;
 }
 
+.controls button.toggle-on {
+    background: #1657a7;
+    color: #fff;
+    border-color: #1657a7;
+}
+
 .description {
     margin-top: 1.5rem;
     max-width: 760px;

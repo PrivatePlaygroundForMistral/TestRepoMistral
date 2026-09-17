@@ -22,6 +22,7 @@
                 <button id="start">Start</button>
                 <button id="pause" disabled>Pause</button>
                 <button id="reset">Reset</button>
+                <button id="colors" class="toggle-on">Colors: on</button>
             </div>
             <table>
                 <tr><td>Current time</td><td><input id="currentTime" value="0.00 s" disabled></td></tr>
@@ -48,9 +49,12 @@
         <p>This example models the iron bar as a 1D elastic rod and solves the
            <strong>wave equation</strong> <code>&rho; &uuml; = E u&prime;&prime;</code> so that a
            suddenly applied force launches a <strong>stress wave</strong> that travels at the
-           longitudinal wave speed <code>c = &radic;(E/&rho;)</code>. The bar is colored by the
-           local axial stress &sigma; = E&middot;&epsilon;: <span style="color:#c0392b">red</span>
-           for tension, <span style="color:#2980b9">blue</span> for compression, white for zero.</p>
+           longitudinal wave speed <code>c = &radic;(E/&rho;)</code>. The bar can be colored by the
+           local axial stress &sigma; = E&middot;&epsilon; (toggle <strong>Colors</strong>):
+           <span style="color:#c0392b">red</span> for tension,
+           <span style="color:#2980b9">blue</span> for compression, white for zero. Coloring is
+           independent of <strong>Slow motion</strong> &mdash; you can watch a fast static deformation
+           colored, or an uncolored slow-motion wave.</p>
 
         <p>Apply a force on the right end (with the left end held fixed) and in
            <strong>Slow motion</strong> you can watch the red tension travel from the right end
@@ -111,6 +115,7 @@
                 this.mouse = null;
                 this.hoverWorld = null;        // last sampled point over the bar (kept on leave)
                 this.maxAbsSigma = 0;          // for color autoscale
+                this.showColor = true;          // stress-color toggle (independent of slow-mo)
                 this.init();
                 this.render(this.ctx);
 
@@ -278,10 +283,10 @@
                 const sigRef = Math.max(Math.abs(numOr("forceRight", 0)), Math.abs(numOr("forceLeft", 0))) / p.A;
                 const scale = Math.max(sigRef, this.maxAbsSigma, 1);
 
+                const fillCol = this.showColor ? null : "#cfd6e4";
                 for (let i = 0; i < N - 1; i++) {
                     const xL = c.x - p.L / 2 * s + (i * p.dx) * s + this.u[i] * s * dispScale;
-                    const t = this.sigma[i] / scale;
-                    ctx.fillStyle = stressColor(t);
+                    ctx.fillStyle = fillCol !== null ? fillCol : stressColor(this.sigma[i] / scale);
                     ctx.fillRect(xL, yTop, segW + 1, this.height0 * s);
                 }
 
@@ -508,6 +513,13 @@
             sim.stop();
             sim.reset();
             setRunningUI(false);
+        });
+        const colorsBtn = document.getElementById("colors");
+        colorsBtn.addEventListener("click", () => {
+            sim.showColor = !sim.showColor;
+            colorsBtn.textContent = "Colors: " + (sim.showColor ? "on" : "off");
+            colorsBtn.classList.toggle("toggle-on", sim.showColor);
+            if (!sim.running) sim.render(sim.ctx);
         });
 
         // Force / boundary changes drive the wave behavior:
