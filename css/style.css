@@ -61,6 +61,7 @@ footer {
     border: 1px solid #d0d0d8;
     border-radius: 4px;
     padding: 4px;
+    flex: 0 0 auto;
 }
 
 canvas {
@@ -74,6 +75,8 @@ canvas {
     border-radius: 4px;
     padding: 0.75rem 1rem;
     min-width: 260px;
+    width: 320px;
+    align-self: flex-start;
 }
 
 .controls table {
@@ -91,10 +94,17 @@ canvas {
     color: #444;
 }
 
+.controls td:last-child {
+    width: 8rem;
+    padding-right: 0;
+}
+
 .controls input[type="number"],
 .controls input[type="range"],
-.controls select {
+.controls select,
+.controls input[disabled] {
     width: 100%;
+    min-width: 0;
     box-sizing: border-box;
 }
 
@@ -103,6 +113,24 @@ canvas {
     padding: 0.4rem;
     margin-top: 0.4rem;
     cursor: pointer;
+}
+
+.btn-row {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+}
+
+.btn-row button {
+    width: auto;
+    flex: 1 1 0;
+    margin-top: 0;
+}
+
+.controls button.toggle-on {
+    background: #1657a7;
+    color: #fff;
+    border-color: #1657a7;
 }
 
 .description {
