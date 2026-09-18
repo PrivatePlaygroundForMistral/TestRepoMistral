@@ -622,8 +622,10 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 
                 // Normalized traction arrow lengths based on stress range
                 // Use the max absolute stress as reference for normalization
+                // Cap the maximum arrow length to 120px and minimum to ensure visibility
                 const maxStress = Math.max(this.maxAbsSigma, 1e6); // at least 1 MPa to avoid division by zero
-                const vlen = 90 / (maxStress / 1e6);   // 90 px per max MPa
+                const tMag = Math.hypot(t[0], t[1]);
+                const vlen = Math.min(120 / (tMag / 1e6), 90 / (maxStress / 1e6));
 
                 const ex = px + t[0] * vlen;
                 const ey = py + t[1] * vlen;
