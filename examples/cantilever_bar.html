@@ -625,6 +625,9 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 // Scale factor: 30 px per MPa of max stress
                 const maxStress = Math.max(this.maxAbsSigma, 1e6); // at least 1 MPa to avoid division by zero
                 const vlen = 30 / (maxStress / 1e6);
+                
+                // Debug logging
+                console.log('DEBUG: maxAbsSigma=', this.maxAbsSigma, 'maxStress=', maxStress, 'vlen=', vlen, 't[0]=', t[0], 't[1]=', t[1], 'tMag=', Math.hypot(t[0], t[1]));
 
                 const ex = px + t[0] * vlen;
                 const ey = py + t[1] * vlen;
