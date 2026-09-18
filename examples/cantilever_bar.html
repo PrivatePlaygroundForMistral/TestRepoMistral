@@ -343,7 +343,7 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                     let len = Math.sqrt(ddx * ddx + ddy * ddy);
                     const eps = (len - p.dx) / p.dx;
                     let kappa = 0;
-                    if (i > 0 && i < N - 2) {
+                    if (i < N - 2) {
                         const wx = this.x[i].x - 2 * this.x[i + 1].x + this.x[i + 2].x;
                         const wy = this.x[i].y - 2 * this.x[i + 1].y + this.x[i + 2].y;
                         kappa = Math.sqrt(wx * wx + wy * wy) / (p.dx * p.dx);
