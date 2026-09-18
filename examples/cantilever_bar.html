@@ -23,6 +23,7 @@
                 <button id="pause" disabled>Pause</button>
                 <button id="reset">Reset</button>
                 <button id="colors" class="toggle-on">Colors: on</button>
+                <button id="tensorInfo" class="toggle-on">Tensor: on</button>
             </div>
             <table>
                 <tr><td>Current time</td><td><input id="currentTime" value="0.00 s" disabled></td></tr>
@@ -114,10 +115,20 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 this.mouse = null;
                 this.hoverWorld = null;   // last sampled point over the bar (kept on leave)
                 this.showColor = true;   // stress-color toggle (independent of slow-mo)
+                this.showTensorInfo = true; // tensor information visibility toggle
+                this.draggingNode = null; // node being dragged with left mouse
+                this.dragStartMouse = null; // mouse position when dragging started
+                this.dragTargetWorldPos = null; // target world position for dragging
+                this.panStartMouse = null; // mouse position when panning started
+                this.panStartOrigin = null; // origin when panning started
                 this.init();
                 this.render(this.ctx);
                 canvas.addEventListener("mousemove", (e) => this._onMove(e));
                 canvas.addEventListener("wheel", (e) => this._onWheel(e), { passive: false });
+                canvas.addEventListener("mousedown", (e) => this._onMouseDown(e));
+                canvas.addEventListener("mouseup", (e) => this._onMouseUp(e));
+                canvas.addEventListener("mouseleave", (e) => this._onMouseUp(e));
+                canvas.addEventListener("contextmenu", (e) => e.preventDefault());
                 // Note: do NOT clear hoverWorld on mouseleave -> keep last position.
             }
 
@@ -133,7 +144,181 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 this.render(this.ctx);
             }
 
-            init() {
+            _onMouseDown(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                const mouse = {
+                    px: (e.clientX - rect.left) * (this.canvas.width / rect.width),
+                    py: (e.clientY - rect.top) * (this.canvas.height / rect.height)
+                };
+                
+                if (e.button === 0) { // Left mouse button - try to drag a node
+                    const nodeIndex = this._findClosestNode(mouse.px, mouse.py);
+                    if (nodeIndex !== null && nodeIndex !== 0) { // Don't drag node 0 (clamped)
+                        this.draggingNode = nodeIndex;
+                        this.dragStartMouse = { px: mouse.px, py: mouse.py };
+                        // Get the world position at the start of drag
+                        const worldPos = this._pixelToWorld(mouse.px, mouse.py);
+                        this.dragTargetWorldPos = { x: worldPos.x, y: worldPos.y };
+                        // Don't pause simulation - let it run during drag
+                        e.preventDefault();
+                    }
+                } else if (e.button === 2) { // Right mouse button - pan the scene
+                    this.panStartMouse = { px: mouse.px, py: mouse.py };
+                    this.panStartOrigin = { x: this.originPx.x, y: this.originPx.y };
+                    e.preventDefault();
+                }
+            }
+
+            _onMouseUp(e) {
+                if (this.draggingNode !== null) {
+                    // Clean up drag state
+                    this.draggingNode = null;
+                    this.dragStartMouse = null;
+                    this.dragTargetWorldPos = null;
+                    
+                    // Recompute stress for the new deformed state
+                    this._computeStress();
+                    this.render(this.ctx);
+                }
+                if (this.panStartMouse !== null) {
+                    this.panStartMouse = null;
+                    this.panStartOrigin = null;
+                }
+            }
+
+            // Find the closest node to the given pixel coordinates
+            // Also check if the point is close to the bar (not just nodes)
+            _findClosestNode(px, py) {
+                const s = this.scale;
+                const o = this.originPx;
+                const threshold = 15; // pixel threshold for node selection
+                const barThreshold = 20; // pixel threshold for bar selection
+                
+                // First, check if point is close to any node
+                for (let i = 0; i < this.N; i++) {
+                    const nodePxX = o.x + this.x[i].x * s;
+                    const nodePxY = o.y + this.x[i].y * s;
+                    const dist = Math.hypot(px - nodePxX, py - nodePxY);
+                    if (dist <= threshold) {
+                        return i;
+                    }
+                }
+                
+                // If not close to a node, check if it's close to the bar
+                // Find closest point on the bar to the mouse position
+                let closestNode = null;
+                let minDist = barThreshold;
+                
+                for (let i = 0; i < this.N - 1; i++) {
+                    // Get pixel positions of segment endpoints
+                    const x1 = o.x + this.x[i].x * s;
+                    const y1 = o.y + this.x[i].y * s;
+                    const x2 = o.x + this.x[i + 1].x * s;
+                    const y2 = o.y + this.x[i + 1].y * s;
+                    
+                    // Calculate distance from point to line segment
+                    const dist = this._pointToSegmentDistance(px, py, x1, y1, x2, y2);
+                    
+                    if (dist < minDist) {
+                        minDist = dist;
+                        // Return the node that's closer to the projection point
+                        // Use linear interpolation to find which node is closer
+                        const t = this._projectPointOnSegment(px, py, x1, y1, x2, y2);
+                        closestNode = t < 0.5 ? i : i + 1;
+                    }
+                }
+                
+                return minDist <= barThreshold ? closestNode : null;
+            }
+
+            // Calculate distance from point to line segment
+            _pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+                const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+                if (l2 === 0) return Math.hypot(px - x1, py - y1);
+                
+                let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+                t = Math.max(0, Math.min(1, t));
+                
+                const projX = x1 + t * (x2 - x1);
+                const projY = y1 + t * (y2 - y1);
+                
+                return Math.hypot(px - projX, py - projY);
+            }
+
+            // Project point on segment and return parameter t (0 to 1)
+            _projectPointOnSegment(px, py, x1, y1, x2, y2) {
+                const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+                if (l2 === 0) return 0;
+                
+                let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+                return Math.max(0, Math.min(1, t));
+            }
+
+            // Convert pixel to world coordinates
+            _pixelToWorld(px, py) {
+                const o = this.originPx;
+                const s = this.scale;
+                return {
+                    x: (px - o.x) / s,
+                    y: (py - o.y) / s
+                };
+            }
+
+            // Position-Based Dynamics: Apply distance constraints iteratively
+            _applyPBDConstraints(draggedIndex) {
+                const restLength = this.dx;
+                const iterations = 20; // Number of constraint iterations
+                const compliance = 0.0; // How strictly to enforce constraints (0 = rigid, 1 = very soft)
+                
+                // Save original positions for this iteration
+                const origX = this.x.map(n => n.x);
+                const origY = this.x.map(n => n.y);
+                
+                // First, set the dragged node to its target position
+                this.x[draggedIndex].x = targetX;
+                this.x[draggedIndex].y = targetY;
+                
+                // Keep node 1's y at 0 (clamped slope)
+                if (draggedIndex === 1) {
+                    this.x[1].y = 0;
+                }
+                
+                // Apply constraints iteratively
+                for (let iter = 0; iter < iterations; iter++) {
+                    // Process nodes in order from clamped end to free end (follow-the-leader)
+                    for (let i = 1; i < this.N; i++) {
+                        if (i === draggedIndex) continue; // Keep dragged node at target
+                        
+                        // Distance constraint: maintain rest length with previous node
+                        const dx = this.x[i].x - this.x[i - 1].x;
+                        const dy = this.x[i].y - this.x[i - 1].y;
+                        const currentDist = Math.hypot(dx, dy);
+                        
+                        if (currentDist > 1e-6) {
+                            // Calculate correction to maintain rest length
+                            const correctionFactor = (1 - compliance) * (currentDist - restLength) / currentDist;
+                            const correctionX = dx * correctionFactor * 0.5;
+                            const correctionY = dy * correctionFactor * 0.5;
+                            
+                            // Only move node i (node i-1 might be constrained)
+                            if (i - 1 === 0) {
+                                // Node 0 is fixed, only move node i
+                                this.x[i].x -= correctionX * 2;
+                                this.x[i].y -= correctionY * 2;
+                            } else {
+                                this.x[i].x -= correctionX;
+                                this.x[i].y -= correctionY;
+                            }
+                        }
+                    }
+                    
+                    // Keep node 0 fixed (clamped)
+                    this.x[0].x = 0;
+                    this.x[0].y = 0;
+                    
+                    // Keep node 1's y at 0 (clamped slope)
+                    this.x[1].y = 0;
+                    
                 const L = Math.max(1e-6, numOr("length", 1.0));
                 const N = Math.max(4, Math.min(200, Math.round(numOr("elements", 40))));
                 this.N = N;
@@ -346,6 +531,59 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                     px: (e.clientX - rect.left) * (this.canvas.width / rect.width),
                     py: (e.clientY - rect.top) * (this.canvas.height / rect.height)
                 };
+                
+                // Handle node dragging with left mouse button
+                if (this.draggingNode !== null && this.dragStartMouse !== null) {
+                    // Get current mouse world position
+                    const mouseWorld = this._pixelToWorld(this.mouse.px, this.mouse.py);
+                    
+                    // Use PBD approach: try to move the dragged node to mouse position
+                    // but constrain it with distance constraints
+                    const nodeIndex = this.draggingNode;
+                    
+                    // Set target position (where mouse is in world coordinates)
+                    const targetX = mouseWorld.x;
+                    const targetY = mouseWorld.y;
+                    
+                    // Temporarily move the node to target
+                    const origX = this.x[nodeIndex].x;
+                    const origY = this.x[nodeIndex].y;
+                    this.x[nodeIndex].x = targetX;
+                    this.x[nodeIndex].y = targetY;
+                    
+                    // Apply PBD distance constraints iteratively
+                    this._applyPBDConstraints(nodeIndex);
+                    
+                    // Keep node 1's y at 0 (clamped slope)
+                    this.x[1].y = 0;
+                    
+                    // Keep node 0 fixed (clamped)
+                    this.x[0].x = 0;
+                    this.x[0].y = 0;
+                    
+                    // Set velocities to zero for stable drag
+                    for (let i = 0; i < this.N; i++) {
+                        this.v[i].x = 0;
+                        this.v[i].y = 0;
+                    }
+                    
+                    this._computeStress();
+                    this.render(this.ctx);
+                    return;
+                }
+                
+                // Handle scene panning with right mouse button
+                if (this.panStartMouse !== null && this.panStartOrigin !== null) {
+                    const dx = this.mouse.px - this.panStartMouse.px;
+                    const dy = this.mouse.py - this.panStartMouse.py;
+                    this.originPx = {
+                        x: this.panStartOrigin.x + dx,
+                        y: this.panStartOrigin.y + dy
+                    };
+                    this.render(this.ctx);
+                    return;
+                }
+                
                 this._readHover();
                 if (!this.running) this.render(this.ctx);
             }
@@ -391,8 +629,10 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 this._drawWall(ctx);
                 this._drawBar(ctx);
                 this._drawPlane(ctx, n);
-                this._drawTensorPanel(ctx, S, n, sH, tH);
-                if (this.hoverWorld) this._drawHover(ctx, S, n);
+                if (this.showTensorInfo) {
+                    this._drawTensorPanel(ctx, S, n, sH, tH);
+                }
+                if (this.hoverWorld && this.showTensorInfo) this._drawHover(ctx, S, n);
                 this._updateStats();
             }
 
@@ -567,7 +807,34 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 const anchor = this._deformedPxX(this.hoverWorld.wx);
                 const px = anchor.x, py = anchor.y;
                 const t = Mat2.mulVec(S, n);
-                const vlen = 90 / 1e6;   // 90 px per MPa
+                
+                // Calculate normalized traction vector length
+                // Get the range of stress values for normalization
+                const p = this._params();
+                let minStress = Infinity, maxStress = -Infinity;
+                for (let i = 0; i < this.N - 1; i++) {
+                    if (this.sigma[i] < minStress) minStress = this.sigma[i];
+                    if (this.sigma[i] > maxStress) maxStress = this.sigma[i];
+                }
+                for (let i = 0; i < this.N; i++) {
+                    if (this.tau[i] < minStress) minStress = this.tau[i];
+                    if (this.tau[i] > maxStress) maxStress = this.tau[i];
+                }
+                
+                // If all stresses are zero, use a default range
+                if (minStress === Infinity) {
+                    minStress = -1e6; maxStress = 1e6;
+                }
+                
+                const stressRange = maxStress - minStress;
+                const DEFAULT_ARROW_LENGTH = 120; // pixels
+                
+                // Normalize traction vector based on the stress range
+                const tMagnitude = Math.hypot(t[0], t[1]);
+                const normalizedLength = (tMagnitude > 0) ? (tMagnitude / stressRange) * DEFAULT_ARROW_LENGTH : 0;
+                
+                // Scale factor to convert normalized traction to pixels
+                const vlen = normalizedLength / Math.max(tMagnitude, 1e-12);
 
                 const ex = px + t[0] * vlen;
                 const ey = py + t[1] * vlen;
@@ -583,10 +850,17 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 const tnScalar = t[0] * n[0] + t[1] * n[1];
                 const tnx = tnScalar * n[0], tny = tnScalar * n[1];
                 const tsx = t[0] - tnx, tsy = t[1] - tny;
-                const enx = px + tnx * vlen, eny = py + tny * vlen;
-                const esx = px + tsx * vlen, esy = py + tsy * vlen;
+                
+                // Use the same normalization for normal and shear components
+                const tnMagnitude = Math.hypot(tnx, tny);
+                const tsMagnitude = Math.hypot(tsx, tsy);
+                const tnVlen = (tnMagnitude > 0) ? (tnMagnitude / stressRange) * DEFAULT_ARROW_LENGTH / Math.max(tnMagnitude, 1e-12) : 0;
+                const tsVlen = (tsMagnitude > 0) ? (tsMagnitude / stressRange) * DEFAULT_ARROW_LENGTH / Math.max(tsMagnitude, 1e-12) : 0;
+                
+                const enx = px + tnx * tnVlen, eny = py + tny * tnVlen;
+                const esx = px + tsx * tsVlen, esy = py + tsy * tsVlen;
 
-                if (Math.hypot(tnx, tny) * vlen > 3) {
+                if (Math.hypot(tnx * tnVlen, tny * tnVlen) > 3) {
                     ctx.save();
                     ctx.strokeStyle = "#1b6ca8"; ctx.fillStyle = "#1b6ca8"; ctx.lineWidth = 2;
                     this._arrow(ctx, px, py, enx, eny, 9);
@@ -594,7 +868,7 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                     ctx.fillText("t_n", enx - 22, eny - 6);
                     ctx.restore();
                 }
-                if (Math.hypot(tsx, tsy) * vlen > 3) {
+                if (Math.hypot(tsx * tsVlen, tsy * tsVlen) > 3) {
                     ctx.save();
                     ctx.strokeStyle = "#e67e22"; ctx.fillStyle = "#e67e22"; ctx.lineWidth = 2;
                     this._arrow(ctx, px, py, esx, esy, 9);
@@ -677,6 +951,14 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
             sim.showColor = !sim.showColor;
             colorsBtn.textContent = "Colors: " + (sim.showColor ? "on" : "off");
             colorsBtn.classList.toggle("toggle-on", sim.showColor);
+            if (!sim.running) sim.render(sim.ctx);
+        });
+
+        const tensorInfoBtn = document.getElementById("tensorInfo");
+        tensorInfoBtn.addEventListener("click", () => {
+            sim.showTensorInfo = !sim.showTensorInfo;
+            tensorInfoBtn.textContent = "Tensor: " + (sim.showTensorInfo ? "on" : "off");
+            tensorInfoBtn.classList.toggle("toggle-on", sim.showTensorInfo);
             if (!sim.running) sim.render(sim.ctx);
         });
 
