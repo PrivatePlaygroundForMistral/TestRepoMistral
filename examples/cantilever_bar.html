@@ -622,15 +622,17 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 const t = Mat2.mulVec(S, n);
                 
                 // Normalized traction arrow lengths based on stress range
-                // Scale factor: 30 px per MPa of max stress
-                const maxStress = Math.max(this.maxAbsSigma, 1e6); // at least 1 MPa to avoid division by zero
+                // traction t is in Pa, convert to MPa for scaling
+                // Use maxAbsSigma as reference (also in Pa)
+                const maxStress = Math.max(this.maxAbsSigma, 1e6); // at least 1 MPa in Pa
+                const tInMPa = [t[0] / 1e6, t[1] / 1e6];
                 const vlen = 30 / (maxStress / 1e6);
                 
                 // Debug logging
-                console.log('DEBUG: maxAbsSigma=', this.maxAbsSigma, 'maxStress=', maxStress, 'vlen=', vlen, 't[0]=', t[0], 't[1]=', t[1], 'tMag=', Math.hypot(t[0], t[1]));
+                console.log('DEBUG: maxAbsSigma=', this.maxAbsSigma, 'maxStress=', maxStress, 'vlen=', vlen, 't[0]=', t[0], 't[1]=', t[1], 'tInMPa=', tInMPa);
 
-                const ex = px + t[0] * vlen;
-                const ey = py + t[1] * vlen;
+                const ex = px + tInMPa[0] * vlen;
+                const ey = py + tInMPa[1] * vlen;
                 ctx.save();
                 ctx.strokeStyle = "#27ae60";
                 ctx.fillStyle = "#27ae60";
@@ -643,8 +645,8 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 const tnScalar = t[0] * n[0] + t[1] * n[1];
                 const tnx = tnScalar * n[0], tny = tnScalar * n[1];
                 const tsx = t[0] - tnx, tsy = t[1] - tny;
-                const enx = px + tnx * vlen, eny = py + tny * vlen;
-                const esx = px + tsx * vlen, esy = py + tsy * vlen;
+                const enx = px + (tnx / 1e6) * vlen, eny = py + (tny / 1e6) * vlen;
+                const esx = px + (tsx / 1e6) * vlen, esy = py + (tsy / 1e6) * vlen;
 
                 if (Math.hypot(tnx, tny) * vlen > 3) {
                     ctx.save();
