@@ -21,7 +21,8 @@ browser, or any example directly.
 └── examples/
     ├── particle_system.html # explicit-Euler particle system with a generator + lifespan
     ├── stress_tensor.html   # 1D iron rod, stress wave, traction t = P·n hover
-    └── cantilever_bar.html  # clamped FEM beam, semi-implicit Euler, gravity swing
+    ├── cantilever_bar.html  # clamped FEM beam, semi-implicit Euler, gravity swing
+    └── advection_convection.html # semi-Lagrangian advection–diffusion + buoyant convection
 ```
 
 ## Shared framework (`js/sim.js`)
@@ -96,6 +97,33 @@ area, section height, element count, damping, slow motion + time scale, plane
 normal angle, plus Start / Pause / Reset and a Colors toggle (mouse wheel
 rotates the plane normal). Live stats show current time, time per sim. step,
 and max |σ|.
+
+## Example: Advection & Convection (2D Heat Transport)
+
+`examples/advection_convection.html` transports a temperature field on a grid
+and shows the difference between advection, advection–diffusion, and
+convection:
+
+1. **Advection** — transport by a velocity field: `∂T/∂t + u·∇T = 0`. A hot
+   blob in a uniform wind drifts rigidly, preserving its shape.
+2. **Advection–diffusion (convection of heat)** — adding `κ∇²T` makes the
+   blob also spread and blur as it moves.
+3. **Natural convection** — with the Boussinesq approximation, each cell gets
+   a buoyancy force proportional to its temperature anomaly, so the heat
+   itself generates the flow: a plume rises off the heater, cools at the top
+   surface, sinks at the sides and returns along the bottom, forming a
+   convection cell (Rayleigh–Bénard-like).
+
+Numerics: semi-Lagrangian advection (backtrace + bilinear sample,
+unconditionally stable), explicit Laplacian diffusion (clamped for stability),
+and a Jacobi pressure projection enforcing `∇·u = 0` so the velocity stays
+incompressible. Velocity is drawn as gray arrows, massless tracer dots make
+the circulation visible, and clicking/dragging on the canvas injects a hot
+blob.
+
+Controls: time step size, wind speed, buoyancy, heater power, thermal
+diffusivity, viscosity, plus Reset / Pause. Live stats show current time,
+time per sim. step, and max temperature.
 
 ## Adding a new example
 
