@@ -133,6 +133,7 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 canvas.addEventListener("mousedown", (e) => this._onMouseDown(e));
                 canvas.addEventListener("mouseup", (e) => this._onMouseUp(e));
                 canvas.addEventListener("mouseleave", (e) => this._onMouseUp(e));
+                canvas.addEventListener("contextmenu", (e) => e.preventDefault());
                 // Note: do NOT clear hoverWorld on mouseleave -> keep last position.
             }
 
@@ -621,11 +622,9 @@ x(t + dt) = x(t) + dt * v(t + dt)  // position uses the NEW velocity</code></pre
                 const t = Mat2.mulVec(S, n);
                 
                 // Normalized traction arrow lengths based on stress range
-                // Use the max absolute stress as reference for normalization
-                // Cap the maximum arrow length to 120px and minimum to ensure visibility
+                // Scale factor: 30 px per MPa of max stress
                 const maxStress = Math.max(this.maxAbsSigma, 1e6); // at least 1 MPa to avoid division by zero
-                const tMag = Math.hypot(t[0], t[1]);
-                const vlen = Math.min(120 / (tMag / 1e6), 90 / (maxStress / 1e6));
+                const vlen = 30 / (maxStress / 1e6);
 
                 const ex = px + t[0] * vlen;
                 const ey = py + t[1] * vlen;
